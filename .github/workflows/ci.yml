@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      CGO_ENABLED: 1
     steps:
       - uses: actions/checkout@v4
 
@@ -16,14 +18,40 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build
-        run: go build -v ./...
+      - name: Install go-winres
+        run: go install github.com/tc-hib/go-winres@latest
 
+      - name: Generate resources
+        run: go generate ./...
+
+      - name: Build
+        run: go build -v -ldflags="-H windowsgui" -o AutoSwitcher.exe ./...
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoSwitcher
+          path: AutoSwitcher.exe
+
+  test:
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Tests run WITHOUT the admin manifest .syso so they don't require elevation
       - name: Test
         run: go test -v ./...
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: 1
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +66,8 @@ jobs:
 
   vet:
     runs-on: windows-latest
+    env:
+      CGO_ENABLED: 1
     steps:
       - uses: actions/checkout@v4
 
