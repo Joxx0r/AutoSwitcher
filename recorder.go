@@ -39,6 +39,14 @@ func (s *RecorderState) ProcessKeyEvent(vkCode uint32, isKeyDown bool) RecorderA
 			return RecorderUpdateLabel
 		}
 
+		// Resync modifier state from actual keyboard before any non-modifier
+		// key decision. This prevents stale modifiers when the dialog lost
+		// and regained focus (e.g., Escape should still cancel even if
+		// HeldModifiers was stale from a prior focus loss).
+		if s.ResyncModifiers != nil {
+			s.HeldModifiers = s.ResyncModifiers()
+		}
+
 		// Escape with no modifiers cancels
 		if vkCode == 0x1B && s.HeldModifiers == 0 {
 			s.Done = true
@@ -48,12 +56,6 @@ func (s *RecorderState) ProcessKeyEvent(vkCode uint32, isKeyDown bool) RecorderA
 		// Unsupported key
 		if !IsSupportedVK(vkCode) {
 			return RecorderRejectKey
-		}
-
-		// Resync modifier state from actual keyboard before accepting.
-		// This prevents stale modifiers when the dialog lost and regained focus.
-		if s.ResyncModifiers != nil {
-			s.HeldModifiers = s.ResyncModifiers()
 		}
 
 		// Non-function keys require at least one modifier

@@ -143,6 +143,21 @@ func TestRecorderProcessKeyEvent_ResyncOnFocusRegain(t *testing.T) {
 	}
 }
 
+func TestRecorderProcessKeyEvent_ResyncEscapeAfterFocusLoss(t *testing.T) {
+	// Stale Ctrl held, but resync shows nothing held — Escape should cancel
+	s := &RecorderState{
+		HeldModifiers: modControl,
+		ResyncModifiers: func() uint32 {
+			return 0
+		},
+	}
+
+	action := s.ProcessKeyEvent(0x1B, true)
+	if action != RecorderCancel {
+		t.Errorf("Escape after stale resync: got %d, want RecorderCancel", action)
+	}
+}
+
 func TestRecorderProcessKeyEvent_ResyncKeepsRealModifiers(t *testing.T) {
 	// ResyncModifiers confirms Win is still held
 	s := &RecorderState{

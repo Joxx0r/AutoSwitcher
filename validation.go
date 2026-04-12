@@ -29,9 +29,6 @@ func ValidateBinding(b *Binding) error {
 			return fmt.Errorf("unknown modifier %q, valid: win, ctrl, alt, shift", m)
 		}
 	}
-	if err := ValidateHotkeyRules(b.Hotkey.Key, b.Hotkey.Modifiers); err != nil {
-		return err
-	}
 	return nil
 }
 

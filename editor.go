@@ -347,6 +347,18 @@ func recordHotkeyManual(owner walk.Form) (modifiers []string, key string, ok boo
 								walk.MsgBox(dlg, "Validation", err.Error(), walk.MsgBoxIconWarning)
 								return
 							}
+							// Parse modifiers to pass to ValidateHotkeyRules
+							var mods []string
+							for _, m := range strings.Split(modsLE.Text(), ",") {
+								m = strings.TrimSpace(m)
+								if m != "" {
+									mods = append(mods, m)
+								}
+							}
+							if err := ValidateHotkeyRules(keyLE.Text(), mods); err != nil {
+								walk.MsgBox(dlg, "Validation", err.Error(), walk.MsgBoxIconWarning)
+								return
+							}
 							// Capture values while widgets are still alive
 							capturedModsText = modsLE.Text()
 							capturedKeyText = keyLE.Text()
