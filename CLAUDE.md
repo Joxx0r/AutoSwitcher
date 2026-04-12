@@ -103,7 +103,7 @@ Note: do NOT have `rsrc_windows_amd64.syso` present when running tests — the a
 
 ## Key Design Decisions
 
-- **RegisterHotKey API** — Standard Win32, anti-cheat safe. No `SetWindowsHookEx` or keyboard hooks.
+- **RegisterHotKey API** — Standard Win32, anti-cheat safe. No permanent `SetWindowsHookEx` or keyboard hooks. (A temporary `WH_KEYBOARD_LL` hook is used only during the hotkey recording dialog to capture Win+X and Alt+X combos; it is removed when the dialog closes.)
 - **Walk for GUI** — Native Win32 look, single binary. Trade-off: requires CGo.
 - **asInvoker manifest** — No UAC prompt during development. Task Scheduler autostart uses `/rl highest` for elevation when needed.
 - **TerminateProcess for instance replacement** — More reliable than window messages for killing old instances during development iteration.

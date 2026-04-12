@@ -138,6 +138,31 @@ func FormatModifiers(mods uint32) string {
 	return strings.Join(parts, "+")
 }
 
+// IsSupportedVK returns true if the given virtual key code is in our supported vocabulary
+// (i.e., it can round-trip through FormatVK → ParseKey without producing a hex fallback).
+func IsSupportedVK(vk uint32) bool {
+	// A-Z
+	if vk >= 0x41 && vk <= 0x5A {
+		return true
+	}
+	// 0-9
+	if vk >= 0x30 && vk <= 0x39 {
+		return true
+	}
+	// Function keys and named keys
+	for _, code := range functionKeys {
+		if code == vk {
+			return true
+		}
+	}
+	for _, code := range namedKeys {
+		if code == vk {
+			return true
+		}
+	}
+	return false
+}
+
 // VKToModifierBit returns the modifier bitmask for a modifier VK code, or 0 if not a modifier.
 func VKToModifierBit(vk uint32) uint32 {
 	switch vk {

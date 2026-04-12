@@ -162,15 +162,20 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 
 // recordHotkeyByKeypress captures a hotkey by listening for actual key presses.
 // Uses a temporary low-level keyboard hook to intercept all keys including Win+X combos.
+// The hook is scoped to the recording dialog's lifetime only.
 func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok bool) {
 	var dlg *walk.Dialog
 	var statusLabel *walk.Label
+	var ready bool // set after dialog widgets are assigned
 
 	var heldModifiers uint32
 	var capturedKey uint32
 	var done bool
 
 	updateLabel := func() {
+		if statusLabel == nil {
+			return
+		}
 		text := FormatModifiers(heldModifiers)
 		if text != "" {
 			text += "+..."
@@ -181,8 +186,8 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 	}
 
 	hookCB := func(vkCode uint32, isKeyDown bool) bool {
-		if done {
-			return true
+		if done || !ready {
+			return true // suppress keys before dialog is ready
 		}
 
 		if isKeyDown {
@@ -198,6 +203,11 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 				done = true
 				dlg.Cancel()
 				return true
+			}
+
+			// Only accept keys that are in our supported vocabulary
+			if !IsSupportedVK(vkCode) {
+				return true // suppress unsupported keys silently
 			}
 
 			// Non-modifier key completes the recording
@@ -226,6 +236,9 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 		Title:    "Record Hotkey",
 		MinSize:  decl.Size{Width: 350, Height: 150},
 		Layout:   decl.VBox{},
+		OnBoundsChanged: func() {
+			ready = true
+		},
 		Children: []decl.Widget{
 			decl.Label{
 				AssignTo:  &statusLabel,
