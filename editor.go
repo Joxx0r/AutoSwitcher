@@ -177,17 +177,20 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 	var capturedKey uint32
 	var done bool
 
-	updateLabel := func() {
-		if statusLabel == nil {
-			return
+	setLabel := func(text string) {
+		if statusLabel != nil {
+			_ = statusLabel.SetText(text)
 		}
+	}
+
+	updateLabel := func() {
 		text := FormatModifiers(heldModifiers)
 		if text != "" {
 			text += "+..."
 		} else {
 			text = "Press your hotkey combination..."
 		}
-		statusLabel.SetText(text)
+		setLabel(text)
 	}
 
 	hookCB := func(vkCode uint32, isKeyDown bool) bool {
@@ -212,7 +215,8 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 
 			// Only accept keys that are in our supported vocabulary
 			if !IsSupportedVK(vkCode) {
-				return true // suppress unsupported keys silently
+				setLabel("Unsupported key — try another or use manual entry")
+				return true
 			}
 
 			// Non-modifier key completes the recording
@@ -230,11 +234,8 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 		return true
 	}
 
-	if err := installKeyboardHook(hookCB); err != nil {
-		log.Printf("keyboard hook failed, falling back to manual input: %v", err)
-		return recordHotkeyManual(owner)
-	}
-	defer uninstallKeyboardHook()
+	var hookInstalled bool
+	var hookFailed bool
 
 	_, _ = decl.Dialog{
 		AssignTo: &dlg,
@@ -242,7 +243,16 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 		MinSize:  decl.Size{Width: 350, Height: 150},
 		Layout:   decl.VBox{},
 		OnBoundsChanged: func() {
-			ready = true
+			if !hookInstalled && !hookFailed && dlg != nil {
+				if err := installKeyboardHook(hookCB, uintptr(dlg.Handle())); err != nil {
+					log.Printf("keyboard hook failed, closing recorder: %v", err)
+					hookFailed = true
+					dlg.Cancel()
+					return
+				}
+				hookInstalled = true
+				ready = true
+			}
 		},
 		Children: []decl.Widget{
 			decl.Label{
@@ -268,8 +278,8 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 								dlg.Accept()
 							}
 							// If manual was cancelled, re-install hook
-							if !done {
-								if err := installKeyboardHook(hookCB); err != nil {
+							if !done && dlg != nil {
+								if err := installKeyboardHook(hookCB, uintptr(dlg.Handle())); err != nil {
 									log.Printf("re-install keyboard hook failed: %v", err)
 									dlg.Cancel()
 								}
@@ -287,6 +297,14 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 			},
 		},
 	}.Run(owner)
+
+	// Always clean up the hook after the dialog closes
+	uninstallKeyboardHook()
+
+	// If hook failed to install, fall back to manual input
+	if hookFailed {
+		return recordHotkeyManual(owner)
+	}
 
 	if capturedKey != 0 && !ok {
 		modifiers = ModifierBitsToStrings(heldModifiers)

@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"syscall"
 	"unsafe"
 )
@@ -25,19 +26,28 @@ var (
 // hookState holds the active keyboard hook state.
 var hookState struct {
 	handle   uintptr
+	dlgHWND  uintptr // HWND of the recording dialog, for focus checking
 	callback func(vkCode uint32, isKeyDown bool) bool
 }
 
 // readHookVK reads the VkCode (first uint32) from a KBDLLHOOKSTRUCT at the given address.
 // Uses RtlMoveMemory to avoid go vet's unsafeptr check on uintptr-to-unsafe.Pointer conversions.
 func readHookVK(src uintptr, dst *uint32) {
-	procRtlMoveMemory.Call(uintptr(unsafe.Pointer(dst)), src, 4)
+	_, _, _ = procRtlMoveMemory.Call(uintptr(unsafe.Pointer(dst)), src, 4)
 }
 
 // lowLevelKeyboardProc is the raw hook callback registered with SetWindowsHookEx.
 func lowLevelKeyboardProc(nCode int32, wParam uintptr, lParam uintptr) uintptr {
 	if nCode >= 0 && hookState.callback != nil {
-		// lParam points to a KBDLLHOOKSTRUCT; VkCode is the first uint32 field.
+		// Only intercept keys when the recording dialog is in the foreground
+		if hookState.dlgHWND != 0 {
+			fg, _, _ := procGetForegroundWindow.Call()
+			if fg != hookState.dlgHWND {
+				ret, _, _ := procCallNextHookEx.Call(hookState.handle, uintptr(nCode), wParam, lParam)
+				return ret
+			}
+		}
+
 		// lParam points to KBDLLHOOKSTRUCT; VkCode is the first uint32 field.
 		var vkCode uint32
 		readHookVK(lParam, &vkCode)
@@ -53,12 +63,15 @@ func lowLevelKeyboardProc(nCode int32, wParam uintptr, lParam uintptr) uintptr {
 // installKeyboardHook installs a temporary WH_KEYBOARD_LL hook.
 // The callback receives the VK code and whether it's a key-down event.
 // Return true from the callback to suppress the key.
-func installKeyboardHook(cb func(vkCode uint32, isKeyDown bool) bool) error {
+// dlgHWND is the recording dialog's window handle — keys are only intercepted
+// when this window is in the foreground.
+func installKeyboardHook(cb func(vkCode uint32, isKeyDown bool) bool, dlgHWND uintptr) error {
 	if hookState.handle != 0 {
 		return fmt.Errorf("keyboard hook already installed")
 	}
 
 	hookState.callback = cb
+	hookState.dlgHWND = dlgHWND
 	hookProc := syscall.NewCallback(func(nCode int32, wParam uintptr, lParam uintptr) uintptr {
 		return lowLevelKeyboardProc(nCode, wParam, lParam)
 	})
@@ -67,6 +80,7 @@ func installKeyboardHook(cb func(vkCode uint32, isKeyDown bool) bool) error {
 	handle, _, err := procSetWindowsHookEx.Call(whKeyboardLL, hookProc, modHandle, 0)
 	if handle == 0 {
 		hookState.callback = nil
+		hookState.dlgHWND = 0
 		return fmt.Errorf("SetWindowsHookEx failed: %w", err)
 	}
 
@@ -77,8 +91,12 @@ func installKeyboardHook(cb func(vkCode uint32, isKeyDown bool) bool) error {
 // uninstallKeyboardHook removes the keyboard hook.
 func uninstallKeyboardHook() {
 	if hookState.handle != 0 {
-		procUnhookWindowsHookEx.Call(hookState.handle)
+		ret, _, _ := procUnhookWindowsHookEx.Call(hookState.handle)
+		if ret == 0 {
+			log.Printf("UnhookWindowsHookEx failed for handle %v", hookState.handle)
+		}
 		hookState.handle = 0
 		hookState.callback = nil
+		hookState.dlgHWND = 0
 	}
 }
