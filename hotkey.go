@@ -121,6 +121,8 @@ func ResolveHotkeyAction(binding *Binding, wins []WindowInfo, foreground uintptr
 	switch binding.MultiWindow {
 	case "cycle":
 		return resolveCycle(binding, wins, foreground, state)
+	case "toggle":
+		return resolveToggle(binding, wins, foreground, state)
 	default: // "most_recent" or unset
 		return resolveMostRecent(wins, foreground, state)
 	}
@@ -180,6 +182,122 @@ func resolveCycle(binding *Binding, wins []WindowInfo, foreground uintptr, state
 	}, newState
 }
 
+func resolveToggle(binding *Binding, wins []WindowInfo, foreground uintptr, state bindingState) (HotkeyAction, bindingState) {
+	// Check if foreground is one of our matches
+	isForegroundMatch := false
+	for _, w := range wins {
+		if w.HWND == foreground {
+			isForegroundMatch = true
+			break
+		}
+	}
+
+	if !isForegroundMatch {
+		// Focus the first match, save current foreground as previousHWND
+		newState := bindingState{
+			lastHWND:     state.lastHWND,
+			previousHWND: foreground,
+		}
+		return HotkeyAction{
+			Type:   ActionFocus,
+			Target: wins[0].HWND,
+		}, newState
+	}
+
+	// Foreground IS a match
+	if state.previousHWND != 0 {
+		if isWindowValid(state.previousHWND) {
+			// Go back to previous window
+			newState := bindingState{
+				lastHWND:     state.lastHWND,
+				previousHWND: 0,
+			}
+			return HotkeyAction{
+				Type:   ActionFocus,
+				Target: state.previousHWND,
+			}, newState
+		}
+		// Previous window is stale — clear it
+		newState := bindingState{
+			lastHWND:     state.lastHWND,
+			previousHWND: 0,
+		}
+		return HotkeyAction{Type: ActionNone}, newState
+	}
+
+	// No previous window to go back to
+	return HotkeyAction{Type: ActionNone}, state
+}
+
+// handleWorkspace processes a workspace binding by focusing/launching multiple apps.
+func (hm *HotkeyManager) handleWorkspace(binding *Binding) {
+	foreground := getForegroundHWND()
+
+	type pendingAction struct {
+		action  HotkeyAction
+		itemExe string
+	}
+	var launches []pendingAction
+	var focuses []pendingAction
+
+	for _, item := range binding.WorkspaceItems {
+		syntheticBinding := &Binding{
+			Name:          item.ExeName,
+			ExeName:       item.ExeName,
+			LaunchCommand: item.LaunchCommand,
+			LaunchArgs:    item.LaunchArgs,
+			MultiWindow:   "most_recent",
+		}
+
+		wins, err := findWindowsByExe(item.ExeName)
+		if err != nil {
+			log.Printf("Workspace %s: error finding %s: %v", binding.Name, item.ExeName, err)
+			continue
+		}
+
+		if item.TitlePattern != "" {
+			wins = filterByTitle(wins, item.TitlePattern)
+		}
+
+		action, _ := ResolveHotkeyAction(syntheticBinding, wins, foreground, bindingState{})
+
+		switch action.Type {
+		case ActionLaunch:
+			launches = append(launches, pendingAction{action: action, itemExe: item.ExeName})
+		case ActionFocus:
+			focuses = append(focuses, pendingAction{action: action, itemExe: item.ExeName})
+		case ActionNotify:
+			log.Printf("Workspace %s: %s", binding.Name, action.Message)
+			if hm.showBalloon != nil {
+				hm.showBalloon(action.Title, action.Message)
+			}
+		}
+	}
+
+	// Execute all launches first
+	for _, pa := range launches {
+		log.Printf("Workspace %s: launching %s", binding.Name, pa.itemExe)
+		if err := launchApp(pa.action.Command, pa.action.Args); err != nil {
+			errMsg := fmt.Sprintf("Workspace %s: failed to launch %s: %v", binding.Name, pa.itemExe, err)
+			log.Println(errMsg)
+			if hm.showBalloon != nil {
+				hm.showBalloon("Launch Failed", errMsg)
+			}
+		}
+	}
+
+	// Focus the first focusable item (so the primary app gets foreground)
+	if len(focuses) > 0 {
+		pa := focuses[0]
+		if err := focusWindow(pa.action.Target); err != nil {
+			log.Printf("Workspace %s: failed to focus %s: %v", binding.Name, pa.itemExe, err)
+			if hm.showBalloon != nil {
+				hm.showBalloon("Focus Failed", fmt.Sprintf("Could not focus %s: %v", pa.itemExe, err))
+			}
+		}
+	}
+}
+
 // HandleHotkey processes a WM_HOTKEY message.
 func (hm *HotkeyManager) HandleHotkey(id int32) {
 	binding, ok := hm.bindings[id]
@@ -187,10 +305,19 @@ func (hm *HotkeyManager) HandleHotkey(id int32) {
 		return
 	}
 
+	if binding.Type == "workspace" {
+		hm.handleWorkspace(binding)
+		return
+	}
+
 	wins, err := findWindowsByExe(binding.ExeName)
 	if err != nil {
 		log.Printf("Error finding windows for %s: %v", binding.ExeName, err)
 		return
+	}
+
+	if binding.TitlePattern != "" {
+		wins = filterByTitle(wins, binding.TitlePattern)
 	}
 
 	foreground := getForegroundHWND()
