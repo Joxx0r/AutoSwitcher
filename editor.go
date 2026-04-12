@@ -12,7 +12,8 @@ import (
 // ShowBindingEditor displays the binding editor dialog. Returns true if the user saved.
 func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 	var dlg *walk.Dialog
-	var nameLE, exeLE, launchLE, argsLE, hotkeyLE *walk.LineEdit
+	var nameLE, exeLE, launchLE, hotkeyLE *walk.LineEdit
+	var argsTE *walk.TextEdit
 	var multiCB *walk.ComboBox
 	var accepted bool
 
@@ -26,11 +27,11 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 		multiIndex = 1
 	}
 
-	Dialog{
-		AssignTo:  &dlg,
-		Title:     "Edit Binding",
-		MinSize:   Size{Width: 400, Height: 300},
-		Layout:    Grid{Columns: 2, MarginsZero: false},
+	_, _ = Dialog{
+		AssignTo: &dlg,
+		Title:    "Edit Binding",
+		MinSize:  Size{Width: 400, Height: 350},
+		Layout:   Grid{Columns: 2, MarginsZero: false},
 		Children: []Widget{
 			Label{Text: "Name:"},
 			LineEdit{AssignTo: &nameLE, Text: binding.Name},
@@ -53,7 +54,7 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 								capturedMods = mods
 								capturedKey = key
 								hk := HotkeyDef{Modifiers: mods, Key: key}
-								hotkeyLE.SetText(hk.Format())
+								_ = hotkeyLE.SetText(hk.Format())
 							}
 						},
 					},
@@ -75,7 +76,7 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 							dlgFile := new(walk.FileDialog)
 							dlgFile.Filter = "Executables (*.exe)|*.exe|All Files (*.*)|*.*"
 							if ok, _ := dlgFile.ShowOpen(dlg); ok {
-								launchLE.SetText(dlgFile.FilePath)
+								_ = launchLE.SetText(dlgFile.FilePath)
 							}
 						},
 					},
@@ -83,10 +84,11 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 			},
 
 			Label{Text: "Launch Arguments:"},
-			LineEdit{
-				AssignTo:    &argsLE,
-				Text:        strings.Join(binding.LaunchArgs, "\n"),
-				ToolTipText: "One argument per line. Spaces within an argument are preserved.",
+			TextEdit{
+				AssignTo: &argsTE,
+				Text:     strings.Join(binding.LaunchArgs, "\r\n"),
+				VScroll:  true,
+				MinSize:  Size{Height: 50},
 			},
 
 			Label{Text: "Multi-Window:"},
@@ -125,7 +127,7 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 							}
 							binding.ExeName = exeLE.Text()
 							binding.LaunchCommand = launchLE.Text()
-							if argsText := strings.TrimSpace(argsLE.Text()); argsText != "" {
+							if argsText := strings.TrimSpace(argsTE.Text()); argsText != "" {
 								// Split by newlines to preserve spaces within arguments
 								lines := strings.Split(argsText, "\n")
 								var args []string

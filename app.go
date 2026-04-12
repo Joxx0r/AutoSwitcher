@@ -49,7 +49,7 @@ func (a *App) Run() error {
 
 	// Set window text so second instance can find us via FindWindow
 	windowTitle, _ := windows.UTF16PtrFromString("AutoSwitcher_HiddenWindow")
-	procSetWindowTextW.Call(uintptr(a.mw.Handle()), uintptr(unsafe.Pointer(windowTitle)))
+	_, _, _ = procSetWindowTextW.Call(uintptr(a.mw.Handle()), uintptr(unsafe.Pointer(windowTitle)))
 
 	// Override WndProc to intercept WM_HOTKEY and our custom IPC message.
 	// We need to declare origWndProc before the callback references it.
@@ -121,6 +121,9 @@ func (a *App) ShowSettings() {
 // Exit cleanly shuts down the application.
 func (a *App) Exit() {
 	a.hotkeys.UnregisterAll()
-	a.tray.Dispose()
+	if a.tray != nil {
+		a.tray.Dispose()
+		a.tray = nil
+	}
 	walk.App().Exit(0)
 }

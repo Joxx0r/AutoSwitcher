@@ -91,7 +91,7 @@ func (hm *HotkeyManager) RegisterAll(bindings []Binding) []error {
 // UnregisterAll unregisters all currently registered hotkeys.
 func (hm *HotkeyManager) UnregisterAll() {
 	for id := range hm.bindings {
-		procUnregisterHotKey.Call(hm.hwnd, uintptr(id))
+		_, _, _ = procUnregisterHotKey.Call(hm.hwnd, uintptr(id))
 	}
 	hm.bindings = make(map[int32]*Binding)
 	hm.cycleState = make(map[string]cycleInfo)

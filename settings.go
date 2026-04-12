@@ -128,7 +128,7 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 							}
 							working[idx], working[idx-1] = working[idx-1], working[idx]
 							refreshTable()
-							tv.SetCurrentIndex(idx - 1)
+							_ = tv.SetCurrentIndex(idx - 1)
 						},
 					},
 					PushButton{
@@ -140,7 +140,7 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 							}
 							working[idx], working[idx+1] = working[idx+1], working[idx]
 							refreshTable()
-							tv.SetCurrentIndex(idx + 1)
+							_ = tv.SetCurrentIndex(idx + 1)
 						},
 					},
 					HSpacer{},

@@ -24,12 +24,12 @@ func NewTrayIcon(mw *walk.MainWindow, app *App) (*TrayIcon, error) {
 	t := &TrayIcon{ni: ni, app: app}
 
 	// Set icon — use the application icon or a default
-	icon, _ := walk.NewIconFromResourceId(2)
-	if icon != nil {
-		ni.SetIcon(icon)
+	icon, err := walk.NewIconFromResourceId(2)
+	if err == nil {
+		_ = ni.SetIcon(icon)
 	} else {
 		// Fallback to a stock icon
-		ni.SetIcon(walk.IconInformation())
+		_ = ni.SetIcon(walk.IconInformation())
 	}
 
 	ni.SetToolTip("AutoSwitcher")

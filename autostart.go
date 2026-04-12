@@ -27,10 +27,12 @@ func SetAutostart(enabled bool) error {
 			return fmt.Errorf("getting executable path: %w", err)
 		}
 
+		// Quote the path for Task Scheduler — paths with spaces break without quotes
+		quotedPath := `"` + exePath + `"`
 		cmd := exec.Command("schtasks",
 			"/create",
 			"/tn", taskName,
-			"/tr", exePath,
+			"/tr", quotedPath,
 			"/sc", "onlogon",
 			"/rl", "highest",
 			"/f", // force overwrite if exists

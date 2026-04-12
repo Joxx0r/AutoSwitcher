@@ -26,7 +26,7 @@ func LaunchApp(command string, args []string) error {
 	}
 
 	// Detach — don't wait for the process
-	go cmd.Wait()
+	go func() { _ = cmd.Wait() }()
 
 	return nil
 }

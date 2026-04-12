@@ -104,7 +104,8 @@ func LoadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// SaveConfig writes config to the given path atomically (write temp, then rename).
+// SaveConfig writes config to the given path safely.
+// It writes to a temp file first, then replaces the original.
 func SaveConfig(path string, cfg *Config) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {

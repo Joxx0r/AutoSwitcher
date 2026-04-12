@@ -38,10 +38,14 @@ func main() {
 	// Single-instance check via named mutex
 	mutexNamePtr, _ := windows.UTF16PtrFromString(mutexName)
 	_, err := windows.CreateMutex(nil, false, mutexNamePtr)
-	if err == windows.ERROR_ALREADY_EXISTS {
-		// Another instance is running — tell it to show settings
-		notifyExistingInstance()
-		return
+	if err != nil {
+		if err == windows.ERROR_ALREADY_EXISTS {
+			// Another instance is running — tell it to show settings
+			notifyExistingInstance()
+			return
+		}
+		// Mutex creation failed for another reason — log and continue without protection
+		log.Printf("WARNING: CreateMutex failed: %v — running without single-instance protection", err)
 	}
 
 	// Set up logging
@@ -73,7 +77,7 @@ func notifyExistingInstance() {
 	windowTitle, _ := windows.UTF16PtrFromString("AutoSwitcher_HiddenWindow")
 	hwnd, _, _ := procFindWindow.Call(0, uintptr(unsafe.Pointer(windowTitle)))
 	if hwnd != 0 {
-		procPostMessage.Call(hwnd, uintptr(wmShowSettings), 0, 0)
+		_, _, _ = procPostMessage.Call(hwnd, uintptr(wmShowSettings), 0, 0)
 	}
 }
 

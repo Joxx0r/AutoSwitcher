@@ -23,6 +23,8 @@ var (
 	procGetForegroundWindow      = user32.NewProc("GetForegroundWindow")
 	procAttachThreadInput        = user32.NewProc("AttachThreadInput")
 	procGetWindowTextLength      = user32.NewProc("GetWindowTextLengthW")
+	procGetWindow                = user32.NewProc("GetWindow")
+	procGetWindowLong            = user32.NewProc("GetWindowLongW")
 
 	kernel32                        = windows.NewLazySystemDLL("kernel32.dll")
 	procQueryFullProcessImageName   = kernel32.NewProc("QueryFullProcessImageNameW")
@@ -30,7 +32,9 @@ var (
 )
 
 const (
-	swRestore = 9
+	swRestore   = 9
+	gwOwner     = 4      // GW_OWNER
+	wsExToolWin = 0x0080 // WS_EX_TOOLWINDOW
 )
 
 // WindowInfo holds information about a top-level window.
@@ -51,6 +55,18 @@ func findWindowsByExeImpl(exeName string) ([]WindowInfo, error) {
 		visible, _, _ := procIsWindowVisible.Call(hwnd)
 		if visible == 0 {
 			return 1 // continue
+		}
+
+		// Skip owned windows (dialogs, popups belonging to another window)
+		owner, _, _ := procGetWindow.Call(hwnd, gwOwner)
+		if owner != 0 {
+			return 1
+		}
+
+		// Skip tool windows (WS_EX_TOOLWINDOW)
+		exStyle, _, _ := procGetWindowLong.Call(hwnd, ^uintptr(19)) // GWL_EXSTYLE = -20
+		if exStyle&wsExToolWin != 0 {
+			return 1
 		}
 
 		// Skip windows with no title (likely helper windows)
@@ -144,11 +160,18 @@ func FocusWindow(hwnd uintptr) error {
 	}
 
 	ret, _, _ = procSetForegroundWindow.Call(hwnd)
-	if ret == 0 {
-		procBringWindowToTop.Call(hwnd)
+	if ret != 0 {
+		return nil
 	}
 
-	return nil
+	// Last resort
+	_, _, _ = procBringWindowToTop.Call(hwnd)
+
+	// Verify if the window actually became foreground
+	if GetForegroundHWND() == hwnd {
+		return nil
+	}
+	return fmt.Errorf("failed to bring window to foreground")
 }
 
 // GetForegroundHWND returns the handle of the currently focused window.
