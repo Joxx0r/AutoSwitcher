@@ -16,7 +16,7 @@ func TestResolveHotkeyAction_NoWindows_WithLaunch(t *testing.T) {
 		LaunchCommand: "C:\\test.exe",
 		LaunchArgs:    []string{"--flag"},
 	}
-	action, _ := ResolveHotkeyAction(b, nil, 0, cycleInfo{})
+	action, _ := ResolveHotkeyAction(b, nil, 0, bindingState{})
 	if action.Type != ActionLaunch {
 		t.Fatalf("expected ActionLaunch, got %d", action.Type)
 	}
@@ -30,7 +30,7 @@ func TestResolveHotkeyAction_NoWindows_WithLaunch(t *testing.T) {
 
 func TestResolveHotkeyAction_NoWindows_NoLaunch(t *testing.T) {
 	b := &Binding{Name: "test", ExeName: "test.exe"}
-	action, _ := ResolveHotkeyAction(b, nil, 0, cycleInfo{})
+	action, _ := ResolveHotkeyAction(b, nil, 0, bindingState{})
 	if action.Type != ActionNotify {
 		t.Fatalf("expected ActionNotify, got %d", action.Type)
 	}
@@ -42,7 +42,7 @@ func TestResolveHotkeyAction_NoWindows_NoLaunch(t *testing.T) {
 func TestResolveHotkeyAction_MostRecent_ForegroundMatches(t *testing.T) {
 	b := &Binding{Name: "test", ExeName: "test.exe"}
 	wins := []WindowInfo{{HWND: 100}, {HWND: 200}}
-	action, _ := ResolveHotkeyAction(b, wins, 100, cycleInfo{})
+	action, _ := ResolveHotkeyAction(b, wins, 100, bindingState{})
 	if action.Type != ActionNone {
 		t.Fatalf("expected ActionNone, got %d", action.Type)
 	}
@@ -51,7 +51,7 @@ func TestResolveHotkeyAction_MostRecent_ForegroundMatches(t *testing.T) {
 func TestResolveHotkeyAction_MostRecent_FocusTopmost(t *testing.T) {
 	b := &Binding{Name: "test", ExeName: "test.exe"}
 	wins := []WindowInfo{{HWND: 100}, {HWND: 200}}
-	action, _ := ResolveHotkeyAction(b, wins, 999, cycleInfo{})
+	action, _ := ResolveHotkeyAction(b, wins, 999, bindingState{})
 	if action.Type != ActionFocus {
 		t.Fatalf("expected ActionFocus, got %d", action.Type)
 	}
@@ -64,7 +64,7 @@ func TestResolveHotkeyAction_Cycle_AdvancesToNext(t *testing.T) {
 	b := &Binding{Name: "test", ExeName: "test.exe", MultiWindow: "cycle"}
 	wins := []WindowInfo{{HWND: 100}, {HWND: 200}, {HWND: 300}}
 	// Foreground is wins[0], should advance to wins[1]
-	action, state := ResolveHotkeyAction(b, wins, 100, cycleInfo{})
+	action, state := ResolveHotkeyAction(b, wins, 100, bindingState{})
 	if action.Type != ActionFocus {
 		t.Fatalf("expected ActionFocus, got %d", action.Type)
 	}
@@ -80,7 +80,7 @@ func TestResolveHotkeyAction_Cycle_WrapsAround(t *testing.T) {
 	b := &Binding{Name: "test", ExeName: "test.exe", MultiWindow: "cycle"}
 	wins := []WindowInfo{{HWND: 100}, {HWND: 200}, {HWND: 300}}
 	// Foreground is last window, should wrap to first
-	action, state := ResolveHotkeyAction(b, wins, 300, cycleInfo{})
+	action, state := ResolveHotkeyAction(b, wins, 300, bindingState{})
 	if action.Type != ActionFocus {
 		t.Fatalf("expected ActionFocus, got %d", action.Type)
 	}
@@ -96,7 +96,7 @@ func TestResolveHotkeyAction_Cycle_ResumesFromLast(t *testing.T) {
 	b := &Binding{Name: "test", ExeName: "test.exe", MultiWindow: "cycle"}
 	wins := []WindowInfo{{HWND: 100}, {HWND: 200}, {HWND: 300}}
 	// Foreground is not ours, last known is wins[1]
-	action, state := ResolveHotkeyAction(b, wins, 999, cycleInfo{lastHWND: 200})
+	action, state := ResolveHotkeyAction(b, wins, 999, bindingState{lastHWND: 200})
 	if action.Type != ActionFocus {
 		t.Fatalf("expected ActionFocus, got %d", action.Type)
 	}
@@ -112,7 +112,7 @@ func TestResolveHotkeyAction_Cycle_StaleHWND(t *testing.T) {
 	b := &Binding{Name: "test", ExeName: "test.exe", MultiWindow: "cycle"}
 	wins := []WindowInfo{{HWND: 100}, {HWND: 200}}
 	// Last known HWND no longer in list, should start from beginning
-	action, state := ResolveHotkeyAction(b, wins, 999, cycleInfo{lastHWND: 9999})
+	action, state := ResolveHotkeyAction(b, wins, 999, bindingState{lastHWND: 9999})
 	if action.Type != ActionFocus {
 		t.Fatalf("expected ActionFocus, got %d", action.Type)
 	}
@@ -248,5 +248,179 @@ func TestHandleHotkey_FocusFailure(t *testing.T) {
 	}
 	if balloonMsg == "" {
 		t.Error("expected non-empty balloon message")
+	}
+}
+
+// --- Toggle mode tests ---
+
+func TestResolve_Toggle_FocusMatch(t *testing.T) {
+	b := &Binding{Name: "test", ExeName: "test.exe", MultiWindow: "toggle"}
+	wins := []WindowInfo{{HWND: 100}, {HWND: 200}}
+	// Foreground is NOT a match — should focus first match and save foreground as previousHWND
+	action, state := ResolveHotkeyAction(b, wins, 999, bindingState{})
+	if action.Type != ActionFocus {
+		t.Fatalf("expected ActionFocus, got %d", action.Type)
+	}
+	if action.Target != 100 {
+		t.Errorf("expected target 100, got %d", action.Target)
+	}
+	if state.previousHWND != 999 {
+		t.Errorf("expected previousHWND 999, got %d", state.previousHWND)
+	}
+}
+
+func TestResolve_Toggle_GoBack(t *testing.T) {
+	origValid := isWindowValid
+	defer func() { isWindowValid = origValid }()
+	isWindowValid = func(hwnd uintptr) bool { return true }
+
+	b := &Binding{Name: "test", ExeName: "test.exe", MultiWindow: "toggle"}
+	wins := []WindowInfo{{HWND: 100}}
+	// Foreground IS a match, previousHWND is set and valid — go back
+	action, state := ResolveHotkeyAction(b, wins, 100, bindingState{previousHWND: 999})
+	if action.Type != ActionFocus {
+		t.Fatalf("expected ActionFocus, got %d", action.Type)
+	}
+	if action.Target != 999 {
+		t.Errorf("expected target 999 (go back), got %d", action.Target)
+	}
+	if state.previousHWND != 0 {
+		t.Errorf("expected previousHWND cleared to 0, got %d", state.previousHWND)
+	}
+}
+
+func TestResolve_Toggle_NoHistory(t *testing.T) {
+	b := &Binding{Name: "test", ExeName: "test.exe", MultiWindow: "toggle"}
+	wins := []WindowInfo{{HWND: 100}}
+	// Foreground IS a match, no previousHWND — do nothing
+	action, _ := ResolveHotkeyAction(b, wins, 100, bindingState{})
+	if action.Type != ActionNone {
+		t.Fatalf("expected ActionNone, got %d", action.Type)
+	}
+}
+
+func TestResolve_Toggle_StalePrevious(t *testing.T) {
+	origValid := isWindowValid
+	defer func() { isWindowValid = origValid }()
+	isWindowValid = func(hwnd uintptr) bool { return false }
+
+	b := &Binding{Name: "test", ExeName: "test.exe", MultiWindow: "toggle"}
+	wins := []WindowInfo{{HWND: 100}}
+	// Foreground IS a match, previousHWND is stale — ActionNone
+	action, state := ResolveHotkeyAction(b, wins, 100, bindingState{previousHWND: 999})
+	if action.Type != ActionNone {
+		t.Fatalf("expected ActionNone, got %d", action.Type)
+	}
+	if state.previousHWND != 0 {
+		t.Errorf("expected previousHWND cleared to 0, got %d", state.previousHWND)
+	}
+}
+
+// --- Workspace tests ---
+
+func TestHandleWorkspace_AllRunning(t *testing.T) {
+	origFind := findWindowsByExe
+	origFocus := focusWindow
+	origFg := getForegroundHWND
+	origLaunch := launchApp
+	defer func() {
+		findWindowsByExe = origFind
+		focusWindow = origFocus
+		getForegroundHWND = origFg
+		launchApp = origLaunch
+	}()
+
+	getForegroundHWND = func() uintptr { return 999 }
+	findWindowsByExe = func(exe string) ([]WindowInfo, error) {
+		switch exe {
+		case "code.exe":
+			return []WindowInfo{{HWND: 10, ExeName: "code.exe"}}, nil
+		case "wt.exe":
+			return []WindowInfo{{HWND: 20, ExeName: "wt.exe"}}, nil
+		}
+		return nil, nil
+	}
+
+	var focusedHWND uintptr
+	focusWindow = func(hwnd uintptr) error {
+		focusedHWND = hwnd
+		return nil
+	}
+	launchCalled := false
+	launchApp = func(cmd string, args []string) error {
+		launchCalled = true
+		return nil
+	}
+
+	hm := NewHotkeyManager(0, func(title, msg string) {})
+	binding := &Binding{
+		Name: "Dev",
+		Type: "workspace",
+		WorkspaceItems: []WorkspaceItem{
+			{ExeName: "code.exe", LaunchCommand: "code.exe"},
+			{ExeName: "wt.exe", LaunchCommand: "wt.exe"},
+		},
+	}
+	hm.bindings[1] = binding
+
+	hm.handleWorkspace(binding)
+
+	if launchCalled {
+		t.Error("expected no launches since all apps are running")
+	}
+	// Should focus the first item
+	if focusedHWND != 10 {
+		t.Errorf("expected focus on HWND 10, got %d", focusedHWND)
+	}
+}
+
+func TestHandleWorkspace_SomeMissing(t *testing.T) {
+	origFind := findWindowsByExe
+	origFocus := focusWindow
+	origFg := getForegroundHWND
+	origLaunch := launchApp
+	defer func() {
+		findWindowsByExe = origFind
+		focusWindow = origFocus
+		getForegroundHWND = origFg
+		launchApp = origLaunch
+	}()
+
+	getForegroundHWND = func() uintptr { return 999 }
+	findWindowsByExe = func(exe string) ([]WindowInfo, error) {
+		if exe == "code.exe" {
+			return []WindowInfo{{HWND: 10, ExeName: "code.exe"}}, nil
+		}
+		return nil, nil // wt.exe not running
+	}
+
+	var focusedHWND uintptr
+	focusWindow = func(hwnd uintptr) error {
+		focusedHWND = hwnd
+		return nil
+	}
+	var launchedCmds []string
+	launchApp = func(cmd string, args []string) error {
+		launchedCmds = append(launchedCmds, cmd)
+		return nil
+	}
+
+	hm := NewHotkeyManager(0, func(title, msg string) {})
+	binding := &Binding{
+		Name: "Dev",
+		Type: "workspace",
+		WorkspaceItems: []WorkspaceItem{
+			{ExeName: "code.exe", LaunchCommand: "code.exe"},
+			{ExeName: "wt.exe", LaunchCommand: "wt.exe"},
+		},
+	}
+
+	hm.handleWorkspace(binding)
+
+	if len(launchedCmds) != 1 || launchedCmds[0] != "wt.exe" {
+		t.Errorf("expected to launch wt.exe, got %v", launchedCmds)
+	}
+	if focusedHWND != 10 {
+		t.Errorf("expected focus on HWND 10 (code.exe), got %d", focusedHWND)
 	}
 }

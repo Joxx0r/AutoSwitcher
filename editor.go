@@ -14,7 +14,7 @@ import (
 // ShowBindingEditor displays the binding editor dialog. Returns true if the user saved.
 func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 	var dlg *walk.Dialog
-	var nameLE, exeLE, launchLE, hotkeyLE *walk.LineEdit
+	var nameLE, exeLE, launchLE, hotkeyLE, titlePatternLE *walk.LineEdit
 	var argsTE *walk.TextEdit
 	var multiCB *walk.ComboBox
 	var accepted bool
@@ -22,10 +22,13 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 	capturedMods := make([]string, 0)
 	capturedKey := ""
 
-	multiOptions := []string{"Focus Most Recent", "Cycle Through"}
+	multiOptions := []string{"Focus Most Recent", "Cycle Through", "Toggle (Go Back)"}
 	multiIndex := 0
-	if binding.MultiWindow == "cycle" {
+	switch binding.MultiWindow {
+	case "cycle":
 		multiIndex = 1
+	case "toggle":
+		multiIndex = 2
 	}
 
 	_, _ = decl.Dialog{
@@ -84,17 +87,23 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 						Text:    "Pick...",
 						MaxSize: decl.Size{Width: 80},
 						OnClicked: func() {
-							if p := ShowProcessPicker(dlg); p != nil {
-								_ = exeLE.SetText(p.ExeName)
-								// Only auto-fill launch command when empty;
-								// preserves custom launchers/scripts the user set.
+							proc := ShowProcessPicker(dlg)
+							if proc != nil {
+								_ = exeLE.SetText(proc.ExeName)
 								if launchLE.Text() == "" {
-									_ = launchLE.SetText(p.ExePath)
+									_ = launchLE.SetText(proc.ExePath)
 								}
 							}
 						},
 					},
 				},
+			},
+
+			decl.Label{Text: "Title Filter:"},
+			decl.LineEdit{
+				AssignTo:    &titlePatternLE,
+				Text:        binding.TitlePattern,
+				ToolTipText: "Optional: only match windows with this text in the title",
 			},
 
 			decl.Label{Text: "Launch Command:"},
@@ -173,9 +182,13 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 							} else {
 								binding.LaunchArgs = nil
 							}
-							if multiCB.CurrentIndex() == 1 {
+							binding.TitlePattern = strings.TrimSpace(titlePatternLE.Text())
+							switch multiCB.CurrentIndex() {
+							case 1:
 								binding.MultiWindow = "cycle"
-							} else {
+							case 2:
+								binding.MultiWindow = "toggle"
+							default:
 								binding.MultiWindow = "most_recent"
 							}
 
@@ -236,6 +249,10 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 		switch action {
 		case RecorderUpdateLabel:
 			dlg.Synchronize(func() { updateLabel() })
+			// Suppress Win key to prevent Start menu, but let other modifiers
+			// through so GetAsyncKeyState stays accurate for resync
+			isWinKey := vkCode == 0x5B || vkCode == 0x5C
+			return isWinKey
 		case RecorderCancel:
 			dlg.Synchronize(func() { dlg.Cancel() })
 		case RecorderAccept:
@@ -309,7 +326,7 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 		return recordHotkeyManual(owner)
 	}
 
-	if state.CapturedKey != 0 && !ok {
+	if state.CapturedKey != 0 {
 		modifiers = ModifierBitsToStrings(state.CapturedMods)
 		key = FormatVK(state.CapturedKey)
 		ok = true

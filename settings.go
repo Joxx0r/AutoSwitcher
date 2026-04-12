@@ -3,6 +3,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/lxn/walk"
 	decl "github.com/lxn/walk/declarative"
 )
@@ -30,14 +32,21 @@ func NewBindingModel(bindings []Binding) *BindingModel {
 func (m *BindingModel) updateFrom(bindings []Binding) {
 	m.rows = make([]BindingRow, len(bindings))
 	for i, b := range bindings {
+		exeName := b.ExeName
 		mw := "Most Recent"
-		if b.MultiWindow == "cycle" {
+		switch {
+		case b.Type == "workspace":
+			exeName = fmt.Sprintf("Workspace (%d apps)", len(b.WorkspaceItems))
+			mw = "Workspace"
+		case b.MultiWindow == "cycle":
 			mw = "Cycle"
+		case b.MultiWindow == "toggle":
+			mw = "Toggle"
 		}
 		m.rows[i] = BindingRow{
 			Name:        b.Name,
 			Hotkey:      b.Hotkey.Format(),
-			ExeName:     b.ExeName,
+			ExeName:     exeName,
 			MultiWindow: mw,
 		}
 	}
@@ -116,6 +125,16 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 						},
 					},
 					decl.PushButton{
+						Text: "Add Workspace",
+						OnClicked: func() {
+							b := Binding{Type: "workspace"}
+							if ShowWorkspaceEditor(dlg, &b) {
+								working = append(working, b)
+								refreshTable()
+							}
+						},
+					},
+					decl.PushButton{
 						Text: "Edit",
 						OnClicked: func() {
 							idx := tv.CurrentIndex()
@@ -123,7 +142,13 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 								return
 							}
 							b := working[idx]
-							if ShowBindingEditor(dlg, &b) {
+							var saved bool
+							if b.Type == "workspace" {
+								saved = ShowWorkspaceEditor(dlg, &b)
+							} else {
+								saved = ShowBindingEditor(dlg, &b)
+							}
+							if saved {
 								working[idx] = b
 								refreshTable()
 							}

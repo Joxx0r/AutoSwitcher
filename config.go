@@ -17,12 +17,23 @@ type Config struct {
 
 // Binding represents a single hotkey-to-window mapping.
 type Binding struct {
-	Name          string    `json:"name"`
-	Hotkey        HotkeyDef `json:"hotkey"`
-	ExeName       string    `json:"exe_name"`
-	LaunchCommand string    `json:"launch_command"`
-	LaunchArgs    []string  `json:"launch_args"`
-	MultiWindow   string    `json:"multi_window"` // "most_recent" or "cycle"
+	Name           string          `json:"name"`
+	Hotkey         HotkeyDef       `json:"hotkey"`
+	ExeName        string          `json:"exe_name"`
+	LaunchCommand  string          `json:"launch_command"`
+	LaunchArgs     []string        `json:"launch_args"`
+	MultiWindow    string          `json:"multi_window"`                // "most_recent", "cycle", or "toggle"
+	TitlePattern   string          `json:"title_pattern,omitempty"`     // optional: only match windows with this text in the title
+	Type           string          `json:"type,omitempty"`              // "" or "single" (default), "workspace"
+	WorkspaceItems []WorkspaceItem `json:"workspace_items,omitempty"`   // items for workspace bindings
+}
+
+// WorkspaceItem represents a single application within a workspace binding.
+type WorkspaceItem struct {
+	ExeName       string   `json:"exe_name"`
+	TitlePattern  string   `json:"title_pattern,omitempty"`
+	LaunchCommand string   `json:"launch_command"`
+	LaunchArgs    []string `json:"launch_args,omitempty"`
 }
 
 // HotkeyDef defines a hotkey combination.

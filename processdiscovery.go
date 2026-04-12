@@ -12,10 +12,6 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-var (
-	procGetWindowTextW = user32.NewProc("GetWindowTextW")
-)
-
 // ProcessInfo holds information about a running process with a visible window.
 type ProcessInfo struct {
 	ExeName string // basename, e.g. "chrome.exe"
@@ -64,16 +60,6 @@ func discoverProcessesImpl() ([]ProcessInfo, error) {
 	}
 
 	return results, nil
-}
-
-func getWindowText(hwnd uintptr) string {
-	titleLen, _, _ := procGetWindowTextLength.Call(hwnd)
-	if titleLen == 0 {
-		return ""
-	}
-	buf := make([]uint16, titleLen+1)
-	_, _, _ = procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), titleLen+1)
-	return windows.UTF16ToString(buf)
 }
 
 // deduplicateProcesses groups by exe basename (case-insensitive), matching

@@ -15,6 +15,9 @@ func ValidateBinding(b *Binding) error {
 	if strings.TrimSpace(b.Name) == "" {
 		return fmt.Errorf("name is required")
 	}
+	if b.Type == "workspace" {
+		return ValidateWorkspaceBinding(b)
+	}
 	if strings.TrimSpace(b.ExeName) == "" {
 		return fmt.Errorf("executable name is required")
 	}
@@ -27,6 +30,30 @@ func ValidateBinding(b *Binding) error {
 	for _, m := range b.Hotkey.Modifiers {
 		if !validModifiers[strings.ToLower(strings.TrimSpace(m))] {
 			return fmt.Errorf("unknown modifier %q, valid: win, ctrl, alt, shift", m)
+		}
+	}
+	return nil
+}
+
+// ValidateWorkspaceBinding validates a workspace-type binding.
+func ValidateWorkspaceBinding(b *Binding) error {
+	if b.Hotkey.Key == "" {
+		return fmt.Errorf("hotkey is required")
+	}
+	if _, err := ParseKey(b.Hotkey.Key); err != nil {
+		return fmt.Errorf("invalid key %q: %w", b.Hotkey.Key, err)
+	}
+	for _, m := range b.Hotkey.Modifiers {
+		if !validModifiers[strings.ToLower(strings.TrimSpace(m))] {
+			return fmt.Errorf("unknown modifier %q, valid: win, ctrl, alt, shift", m)
+		}
+	}
+	if len(b.WorkspaceItems) == 0 {
+		return fmt.Errorf("workspace must have at least one item")
+	}
+	for i, item := range b.WorkspaceItems {
+		if strings.TrimSpace(item.ExeName) == "" {
+			return fmt.Errorf("workspace item %d: executable name is required", i+1)
 		}
 	}
 	return nil

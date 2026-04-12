@@ -31,3 +31,4 @@ Thumbs.db
 
 # Config (local)
 config.json
+.claude/worktrees/
