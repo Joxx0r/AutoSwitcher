@@ -25,14 +25,19 @@ var (
 	procFindWindow        = user32.NewProc("FindWindowW")
 	procPostMessage       = user32.NewProc("PostMessageW")
 
-	// wmShowSettings is a custom registered message for second-instance IPC.
+	// Custom registered messages for IPC.
 	wmShowSettings uint32
+	wmShutdown     uint32
 )
 
 func init() {
 	msg, _ := windows.UTF16PtrFromString("AutoSwitcher_ShowSettings")
 	ret, _, _ := procRegisterWindowMsg.Call(uintptr(unsafe.Pointer(msg)))
 	wmShowSettings = uint32(ret)
+
+	msg2, _ := windows.UTF16PtrFromString("AutoSwitcher_Shutdown")
+	ret2, _, _ := procRegisterWindowMsg.Call(uintptr(unsafe.Pointer(msg2)))
+	wmShutdown = uint32(ret2)
 }
 
 func main() {
@@ -81,29 +86,37 @@ func main() {
 	}
 }
 
-const wmClose = 0x0010
-
 func shutdownExistingInstance() {
+	// Find the old instance's window and get its process ID
 	windowTitle, _ := windows.UTF16PtrFromString("AutoSwitcher_HiddenWindow")
 	hwnd, _, _ := procFindWindow.Call(0, uintptr(unsafe.Pointer(windowTitle)))
 	if hwnd == 0 {
-		// No window found — old instance may have already exited
 		time.Sleep(500 * time.Millisecond)
 		return
 	}
 
-	// Send WM_CLOSE to the old instance's hidden window
-	_, _, _ = procPostMessage.Call(hwnd, wmClose, 0, 0)
-
-	// Wait for the old instance to exit (poll for up to 5 seconds)
-	for i := 0; i < 50; i++ {
-		time.Sleep(100 * time.Millisecond)
-		hwnd, _, _ = procFindWindow.Call(0, uintptr(unsafe.Pointer(windowTitle)))
-		if hwnd == 0 {
-			return
-		}
+	// Get the PID of the old instance
+	var pid uint32
+	procGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+	if pid == 0 {
+		return
 	}
-	log.Println("WARNING: old instance did not exit in time")
+
+	// Open the process and terminate it
+	handle, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, pid)
+	if err != nil {
+		log.Printf("WARNING: could not open old instance (PID %d): %v", pid, err)
+		return
+	}
+	defer func() { _ = windows.CloseHandle(handle) }()
+
+	if err := windows.TerminateProcess(handle, 0); err != nil {
+		log.Printf("WARNING: could not terminate old instance (PID %d): %v", pid, err)
+		return
+	}
+
+	// Wait for the process to actually exit
+	windows.WaitForSingleObject(handle, 5000)
 }
 
 func setupLogging() {

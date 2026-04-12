@@ -69,6 +69,9 @@ func (a *App) Run() error {
 		case uint32(wmShowSettings):
 			a.ShowSettings()
 			return 0
+		case uint32(wmShutdown):
+			a.Exit()
+			return 0
 		}
 		return win.CallWindowProc(origWndProc, hwnd, msg, wParam, lParam)
 	})
