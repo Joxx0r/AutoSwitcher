@@ -59,6 +59,19 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 							}
 						},
 					},
+					decl.PushButton{
+						Text:    "Edit...",
+						MaxSize: decl.Size{Width: 80},
+						OnClicked: func() {
+							mods, key, ok := recordHotkeyManual(dlg)
+							if ok {
+								capturedMods = mods
+								capturedKey = key
+								hk := HotkeyDef{Modifiers: mods, Key: key}
+								_ = hotkeyLE.SetText(hk.Format())
+							}
+						},
+					},
 				},
 			},
 
@@ -264,31 +277,6 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 				Layout: decl.HBox{},
 				Children: []decl.Widget{
 					decl.HSpacer{},
-					decl.PushButton{
-						Text: "Type manually...",
-						OnClicked: func() {
-							// Uninstall hook before opening manual dialog
-							uninstallKeyboardHook()
-							mods, k, manualOK := recordHotkeyManual(dlg)
-							if manualOK {
-								modifiers = mods
-								key = k
-								ok = true
-								done = true
-								dlg.Accept()
-							}
-							// If manual was cancelled, re-install hook
-							if !done && dlg != nil {
-								if err := installKeyboardHook(hookCB, uintptr(dlg.Handle())); err != nil {
-									log.Printf("re-install keyboard hook failed: %v", err)
-									walk.MsgBox(dlg, "Recording Error",
-										"Could not resume key capture. Please try again or use manual entry.",
-										walk.MsgBoxIconWarning)
-									dlg.Cancel()
-								}
-							}
-						},
-					},
 					decl.PushButton{
 						Text: "Cancel",
 						OnClicked: func() {
