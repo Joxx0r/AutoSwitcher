@@ -26,5 +26,8 @@ go.work.sum
 Thumbs.db
 .DS_Store
 
+# Generated Windows resources
+*.syso
+
 # Config (local)
 config.json
