@@ -23,7 +23,6 @@ var (
 	user32                = windows.NewLazySystemDLL("user32.dll")
 	procRegisterWindowMsg = user32.NewProc("RegisterWindowMessageW")
 	procFindWindow        = user32.NewProc("FindWindowW")
-	procPostMessage       = user32.NewProc("PostMessageW")
 
 	// Custom registered messages for IPC.
 	wmShowSettings uint32
@@ -97,7 +96,7 @@ func shutdownExistingInstance() {
 
 	// Get the PID of the old instance
 	var pid uint32
-	procGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+	_, _, _ = procGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
 	if pid == 0 {
 		return
 	}
@@ -116,7 +115,7 @@ func shutdownExistingInstance() {
 	}
 
 	// Wait for the process to actually exit
-	windows.WaitForSingleObject(handle, 5000)
+	_, _ = windows.WaitForSingleObject(handle, 5000)
 }
 
 func setupLogging() {

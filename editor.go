@@ -229,7 +229,17 @@ func recordHotkeyManual(owner walk.Form) (modifiers []string, key string, ok boo
 	modParts := strings.Split(capturedModsText, ",")
 	for _, m := range modParts {
 		m = strings.TrimSpace(strings.ToLower(m))
-		if m != "" && validModifiers[m] {
+		if m == "" {
+			continue
+		}
+		// Canonicalize aliases to standard names
+		switch m {
+		case "control":
+			m = "ctrl"
+		case "super":
+			m = "win"
+		}
+		if validModifiers[m] {
 			modifiers = append(modifiers, m)
 		}
 	}

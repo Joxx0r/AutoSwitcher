@@ -3,8 +3,6 @@
 package main
 
 import (
-	"log"
-
 	"github.com/lxn/walk"
 	decl "github.com/lxn/walk/declarative"
 )
@@ -88,14 +86,9 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 						Text: "Add",
 						OnClicked: func() {
 							b := Binding{MultiWindow: "most_recent"}
-							log.Printf("Add: opening editor")
 							if ShowBindingEditor(dlg, &b) {
-								log.Printf("Add: editor returned true, binding: %+v", b)
 								working = append(working, b)
-								log.Printf("Add: working now has %d bindings", len(working))
 								refreshTable()
-							} else {
-								log.Printf("Add: editor returned false (cancelled)")
 							}
 						},
 					},
