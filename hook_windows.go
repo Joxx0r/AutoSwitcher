@@ -30,6 +30,13 @@ var hookState struct {
 	callback func(vkCode uint32, isKeyDown bool) bool
 }
 
+// hookProc is a package-level callback stub for the low-level keyboard hook.
+// syscall.NewCallback allocates permanent, non-reclaimable memory on Windows,
+// so we create it once and reuse it across recorder sessions.
+var hookProc = syscall.NewCallback(func(nCode int32, wParam uintptr, lParam uintptr) uintptr {
+	return lowLevelKeyboardProc(nCode, wParam, lParam)
+})
+
 // readHookVK reads the VkCode (first uint32) from a KBDLLHOOKSTRUCT at the given address.
 // Uses RtlMoveMemory to avoid go vet's unsafeptr check on uintptr-to-unsafe.Pointer conversions.
 func readHookVK(src uintptr, dst *uint32) {
@@ -72,9 +79,6 @@ func installKeyboardHook(cb func(vkCode uint32, isKeyDown bool) bool, dlgHWND ui
 
 	hookState.callback = cb
 	hookState.dlgHWND = dlgHWND
-	hookProc := syscall.NewCallback(func(nCode int32, wParam uintptr, lParam uintptr) uintptr {
-		return lowLevelKeyboardProc(nCode, wParam, lParam)
-	})
 
 	modHandle, _, _ := procGetModuleHandle.Call(0)
 	handle, _, err := procSetWindowsHookEx.Call(whKeyboardLL, hookProc, modHandle, 0)

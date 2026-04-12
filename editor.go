@@ -232,6 +232,14 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 				return true
 			}
 
+			// Non-function keys require at least one modifier to avoid
+			// stealing normal typing (e.g., bare "A" would block all A input)
+			isFunctionKey := vkCode >= 0x70 && vkCode <= 0x87
+			if !isFunctionKey && heldModifiers == 0 {
+				setLabel("Hold a modifier (Ctrl, Alt, Win, Shift) first")
+				return true
+			}
+
 			// Non-modifier key completes the recording
 			capturedKey = vkCode
 			done = true

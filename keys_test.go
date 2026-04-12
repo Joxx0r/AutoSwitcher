@@ -124,6 +124,26 @@ func TestFormatModifiers(t *testing.T) {
 	}
 }
 
+func TestFormatVKCanonicalAliases(t *testing.T) {
+	// Keys with aliases must always produce the canonical (preferred) name
+	tests := []struct {
+		vk   uint32
+		want string
+	}{
+		{0x0D, "ENTER"},  // not RETURN
+		{0x1B, "ESCAPE"}, // not ESC
+		{0x2E, "DELETE"}, // not DEL
+		{0x2D, "INSERT"}, // not INS
+	}
+
+	for _, tt := range tests {
+		got := FormatVK(tt.vk)
+		if got != tt.want {
+			t.Errorf("FormatVK(0x%02X) = %q, want canonical %q", tt.vk, got, tt.want)
+		}
+	}
+}
+
 func TestIsSupportedVK(t *testing.T) {
 	tests := []struct {
 		vk   uint32
