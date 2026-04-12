@@ -3,41 +3,91 @@
 package main
 
 import (
+	"sort"
+
 	"github.com/lxn/walk"
 	decl "github.com/lxn/walk/declarative"
 )
 
-// BindingModel implements walk.ReflectTableModel for displaying bindings.
+// BindingRow is the display representation of a binding for the table.
+type BindingRow struct {
+	Name        string
+	Hotkey      string
+	ExeName     string
+	MultiWindow string
+}
+
+// BindingModel implements walk.TableModel for displaying bindings.
 type BindingModel struct {
-	walk.ReflectTableModelBase
-	items []Binding
+	walk.TableModelBase
+	rows []BindingRow
 }
 
 func NewBindingModel(bindings []Binding) *BindingModel {
-	return &BindingModel{items: bindings}
+	m := &BindingModel{}
+	m.updateFrom(bindings)
+	return m
 }
 
-func (m *BindingModel) Items() interface{} {
-	type row struct {
-		Name        string
-		Hotkey      string
-		ExeName     string
-		MultiWindow string
-	}
-	rows := make([]row, len(m.items))
-	for i, b := range m.items {
+func (m *BindingModel) updateFrom(bindings []Binding) {
+	m.rows = make([]BindingRow, len(bindings))
+	for i, b := range bindings {
 		mw := "Most Recent"
 		if b.MultiWindow == "cycle" {
 			mw = "Cycle"
 		}
-		rows[i] = row{
+		m.rows[i] = BindingRow{
 			Name:        b.Name,
 			Hotkey:      b.Hotkey.Format(),
 			ExeName:     b.ExeName,
 			MultiWindow: mw,
 		}
 	}
-	return rows
+}
+
+func (m *BindingModel) RowCount() int {
+	return len(m.rows)
+}
+
+func (m *BindingModel) Value(row, col int) interface{} {
+	if row < 0 || row >= len(m.rows) {
+		return ""
+	}
+	r := m.rows[row]
+	switch col {
+	case 0:
+		return r.Name
+	case 1:
+		return r.Hotkey
+	case 2:
+		return r.ExeName
+	case 3:
+		return r.MultiWindow
+	}
+	return ""
+}
+
+// Sort interface for walk.SortedModel (optional, enables column sorting)
+func (m *BindingModel) Sort(col int, order walk.SortOrder) error {
+	sort.SliceStable(m.rows, func(i, j int) bool {
+		var less bool
+		switch col {
+		case 0:
+			less = m.rows[i].Name < m.rows[j].Name
+		case 1:
+			less = m.rows[i].Hotkey < m.rows[j].Hotkey
+		case 2:
+			less = m.rows[i].ExeName < m.rows[j].ExeName
+		case 3:
+			less = m.rows[i].MultiWindow < m.rows[j].MultiWindow
+		}
+		if order == walk.SortDescending {
+			return !less
+		}
+		return less
+	})
+	m.PublishRowsReset()
+	return nil
 }
 
 // ShowSettingsWindow displays the settings dialog with binding management.
@@ -50,16 +100,15 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 	model := NewBindingModel(working)
 
 	refreshTable := func() {
-		model.items = working
+		model.updateFrom(working)
 		model.PublishRowsReset()
 	}
 
 	_, _ = decl.Dialog{
-		// Report dialog handle once created
 		OnBoundsChanged: func() {
 			if dlg != nil && onCreated != nil {
 				onCreated(uintptr(dlg.Handle()))
-				onCreated = nil // only report once
+				onCreated = nil
 			}
 		},
 		AssignTo: &dlg,
