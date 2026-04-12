@@ -28,11 +28,10 @@ func NewTrayIcon(mw *walk.MainWindow, app *App) (*TrayIcon, error) {
 	if err == nil {
 		_ = ni.SetIcon(icon)
 	} else {
-		// Fallback to a stock icon
 		_ = ni.SetIcon(walk.IconInformation())
 	}
 
-	ni.SetToolTip("AutoSwitcher")
+	_ = ni.SetToolTip("AutoSwitcher")
 
 	// Left-click opens settings
 	ni.MouseDown().Attach(func(x, y int, button walk.MouseButton) {
@@ -43,66 +42,68 @@ func NewTrayIcon(mw *walk.MainWindow, app *App) (*TrayIcon, error) {
 
 	// Build context menu
 	if err := t.buildMenu(); err != nil {
-		ni.Dispose()
+		_ = ni.Dispose()
 		return nil, err
 	}
 
-	ni.SetVisible(true)
+	_ = ni.SetVisible(true)
 
 	return t, nil
 }
 
 func (t *TrayIcon) buildMenu() error {
+	actions := t.ni.ContextMenu().Actions()
+
 	// Settings
 	settingsAction := walk.NewAction()
-	settingsAction.SetText("Settings")
+	_ = settingsAction.SetText("Settings")
 	settingsAction.Triggered().Attach(func() {
 		t.app.ShowSettings()
 	})
-	t.ni.ContextMenu().Actions().Add(settingsAction)
+	_ = actions.Add(settingsAction)
 
 	// Separator
-	t.ni.ContextMenu().Actions().Add(walk.NewSeparatorAction())
+	_ = actions.Add(walk.NewSeparatorAction())
 
 	// Enabled (checkbox)
 	enabledAction := walk.NewAction()
-	enabledAction.SetText("Enabled")
-	enabledAction.SetCheckable(true)
-	enabledAction.SetChecked(true)
+	_ = enabledAction.SetText("Enabled")
+	_ = enabledAction.SetCheckable(true)
+	_ = enabledAction.SetChecked(true)
 	enabledAction.Triggered().Attach(func() {
 		enabled := enabledAction.Checked()
 		t.app.SetEnabled(enabled)
 	})
-	t.ni.ContextMenu().Actions().Add(enabledAction)
+	_ = actions.Add(enabledAction)
 
 	// Start with Windows (checkbox)
 	autostartAction := walk.NewAction()
-	autostartAction.SetText("Start with Windows")
-	autostartAction.SetCheckable(true)
-	autostartAction.SetChecked(IsAutostartEnabled())
+	_ = autostartAction.SetText("Start with Windows")
+	_ = autostartAction.SetCheckable(true)
+	_ = autostartAction.SetChecked(IsAutostartEnabled())
 	autostartAction.Triggered().Attach(func() {
 		checked := autostartAction.Checked()
 		if err := SetAutostart(checked); err != nil {
 			log.Printf("Autostart error: %v", err)
 			t.ShowBalloon("Autostart Error", err.Error())
-			autostartAction.SetChecked(!checked) // revert
+			_ = autostartAction.SetChecked(!checked) // revert
 			return
 		}
 		t.app.config.Autostart = checked
 		_ = SaveConfig(t.app.configPath, t.app.config)
 	})
-	t.ni.ContextMenu().Actions().Add(autostartAction)
+	_ = actions.Add(autostartAction)
 
 	// Separator
-	t.ni.ContextMenu().Actions().Add(walk.NewSeparatorAction())
+	_ = actions.Add(walk.NewSeparatorAction())
 
 	// Exit
 	exitAction := walk.NewAction()
-	exitAction.SetText("Exit")
+	_ = exitAction.SetText("Exit")
 	exitAction.Triggered().Attach(func() {
 		t.app.Exit()
 	})
-	t.ni.ContextMenu().Actions().Add(exitAction)
+	_ = actions.Add(exitAction)
 
 	return nil
 }
@@ -110,13 +111,14 @@ func (t *TrayIcon) buildMenu() error {
 // ShowBalloon displays a balloon notification from the tray icon.
 func (t *TrayIcon) ShowBalloon(title, msg string) {
 	if t.ni != nil {
-		t.ni.ShowCustom(title, msg, walk.IconInformation())
+		_ = t.ni.ShowCustom(title, msg, walk.IconInformation())
 	}
 }
 
 // Dispose cleans up the tray icon.
 func (t *TrayIcon) Dispose() {
 	if t.ni != nil {
-		t.ni.Dispose()
+		_ = t.ni.Dispose()
+		t.ni = nil
 	}
 }

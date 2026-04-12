@@ -15,7 +15,7 @@ import (
 
 const (
 	maxLogSize = 10 * 1024 * 1024 // 10MB
-	mutexName  = "Global\\AutoSwitcher"
+	mutexName  = "Local\\AutoSwitcher"
 )
 
 var (

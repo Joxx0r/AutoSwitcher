@@ -85,7 +85,8 @@ func LoadConfig(path string) (*Config, error) {
 		if os.IsNotExist(err) {
 			return DefaultConfig(), nil
 		}
-		return nil, fmt.Errorf("reading config: %w", err)
+		// Return a default config so the caller always gets a usable config
+		return DefaultConfig(), fmt.Errorf("reading config: %w", err)
 	}
 
 	var cfg Config
@@ -104,8 +105,9 @@ func LoadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// SaveConfig writes config to the given path safely.
-// It writes to a temp file first, then replaces the original.
+// SaveConfig writes config to the given path.
+// Uses a write-to-temp-then-rename strategy for safety. On Windows,
+// os.Rename cannot overwrite, so we fall back to direct write if needed.
 func SaveConfig(path string, cfg *Config) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -117,19 +119,21 @@ func SaveConfig(path string, cfg *Config) error {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
 
+	// Try temp-file-then-rename for new files
 	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return fmt.Errorf("writing temp config: %w", err)
 	}
 
-	// On Windows, os.Rename does not overwrite an existing file.
-	// Remove the destination first if it exists.
-	_ = os.Remove(path)
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("renaming config: %w", err)
+	if err := os.Rename(tmpPath, path); err == nil {
+		return nil // fresh write succeeded
 	}
 
+	// Rename failed (likely because destination exists on Windows).
+	// Clean up temp file and write directly to the destination.
+	_ = os.Remove(tmpPath)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
 	return nil
 }
