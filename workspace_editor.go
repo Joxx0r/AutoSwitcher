@@ -100,7 +100,7 @@ func showWorkspaceItemEditor(owner walk.Form, item *WorkspaceItem) bool {
 								return
 							}
 							item.ExeName = exeLE.Text()
-							item.TitlePattern = titleLE.Text()
+							item.TitlePattern = strings.TrimSpace(titleLE.Text())
 							item.LaunchCommand = launchLE.Text()
 							if argsText := strings.TrimSpace(argsTE.Text()); argsText != "" {
 								lines := strings.Split(argsText, "\n")

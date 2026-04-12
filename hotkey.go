@@ -286,11 +286,14 @@ func (hm *HotkeyManager) handleWorkspace(binding *Binding) {
 		}
 	}
 
-	// Focus the first focusable item, but only if the foreground isn't already
-	// one of our workspace items (avoid stealing focus unnecessarily)
+	// Check if the foreground is already one of our workspace items
+	// (respecting title filters to avoid false matches)
 	foregroundIsOurs := false
 	for _, item := range binding.WorkspaceItems {
 		wins, _ := findWindowsByExe(item.ExeName)
+		if item.TitlePattern != "" {
+			wins = filterByTitle(wins, item.TitlePattern)
+		}
 		for _, w := range wins {
 			if w.HWND == foreground {
 				foregroundIsOurs = true

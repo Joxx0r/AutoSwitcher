@@ -182,7 +182,7 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 							} else {
 								binding.LaunchArgs = nil
 							}
-							binding.TitlePattern = titlePatternLE.Text()
+							binding.TitlePattern = strings.TrimSpace(titlePatternLE.Text())
 							switch multiCB.CurrentIndex() {
 							case 1:
 								binding.MultiWindow = "cycle"
@@ -324,9 +324,6 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 			walk.MsgBoxIconInformation)
 		return recordHotkeyManual(owner)
 	}
-
-	log.Printf("recordHotkeyByKeypress: hookInstalled=%v CapturedKey=0x%X CapturedMods=0x%X Done=%v",
-		hookInstalled, state.CapturedKey, state.CapturedMods, state.Done)
 
 	if state.CapturedKey != 0 {
 		modifiers = ModifierBitsToStrings(state.CapturedMods)
