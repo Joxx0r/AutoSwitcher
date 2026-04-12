@@ -78,7 +78,7 @@ func ShowProcessPicker(owner walk.Form) *ProcessInfo {
 					decl.Label{Text: "Filter:"},
 					decl.LineEdit{
 						AssignTo:    &filterLE,
-						ToolTipText: "Type to filter by exe name or window title",
+						ToolTipText: "Type to filter by exe name, window title, or path",
 						OnTextChanged: func() {
 							model.ApplyFilter(filterLE.Text())
 						},

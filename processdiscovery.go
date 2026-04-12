@@ -31,24 +31,7 @@ func discoverProcessesImpl() ([]ProcessInfo, error) {
 	var results []ProcessInfo
 
 	cb := syscall.NewCallback(func(hwnd uintptr, lParam uintptr) uintptr {
-		// Same filtering as findWindowsByExeImpl
-		visible, _, _ := procIsWindowVisible.Call(hwnd)
-		if visible == 0 {
-			return 1
-		}
-
-		owner, _, _ := procGetWindow.Call(hwnd, gwOwner)
-		if owner != 0 {
-			return 1
-		}
-
-		exStyle, _, _ := procGetWindowLong.Call(hwnd, ^uintptr(19)) // GWL_EXSTYLE = -20
-		if exStyle&wsExToolWin != 0 {
-			return 1
-		}
-
-		titleLen, _, _ := procGetWindowTextLength.Call(hwnd)
-		if titleLen == 0 {
+		if !isTopLevelAppWindow(hwnd) {
 			return 1
 		}
 
@@ -63,7 +46,6 @@ func discoverProcessesImpl() ([]ProcessInfo, error) {
 			return 1
 		}
 
-		// Get window title
 		title := getWindowText(hwnd)
 
 		results = append(results, ProcessInfo{

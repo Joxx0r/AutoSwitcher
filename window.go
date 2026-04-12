@@ -49,42 +49,39 @@ var findWindowsByExe = findWindowsByExeImpl
 var focusWindow = FocusWindowImpl
 var getForegroundHWND = GetForegroundHWNDImpl
 
+// isTopLevelAppWindow returns true if the window handle is a visible, titled,
+// non-tool, non-owned top-level window (i.e., a normal application window).
+func isTopLevelAppWindow(hwnd uintptr) bool {
+	visible, _, _ := procIsWindowVisible.Call(hwnd)
+	if visible == 0 {
+		return false
+	}
+	owner, _, _ := procGetWindow.Call(hwnd, gwOwner)
+	if owner != 0 {
+		return false
+	}
+	exStyle, _, _ := procGetWindowLong.Call(hwnd, ^uintptr(19)) // GWL_EXSTYLE = -20
+	if exStyle&wsExToolWin != 0 {
+		return false
+	}
+	titleLen, _, _ := procGetWindowTextLength.Call(hwnd)
+	return titleLen > 0
+}
+
 func findWindowsByExeImpl(exeName string) ([]WindowInfo, error) {
 	var results []WindowInfo
 
 	cb := syscall.NewCallback(func(hwnd uintptr, lParam uintptr) uintptr {
-		// Skip invisible windows
-		visible, _, _ := procIsWindowVisible.Call(hwnd)
-		if visible == 0 {
-			return 1 // continue
-		}
-
-		// Skip owned windows (dialogs, popups belonging to another window)
-		owner, _, _ := procGetWindow.Call(hwnd, gwOwner)
-		if owner != 0 {
+		if !isTopLevelAppWindow(hwnd) {
 			return 1
 		}
 
-		// Skip tool windows (WS_EX_TOOLWINDOW)
-		exStyle, _, _ := procGetWindowLong.Call(hwnd, ^uintptr(19)) // GWL_EXSTYLE = -20
-		if exStyle&wsExToolWin != 0 {
-			return 1
-		}
-
-		// Skip windows with no title (likely helper windows)
-		titleLen, _, _ := procGetWindowTextLength.Call(hwnd)
-		if titleLen == 0 {
-			return 1
-		}
-
-		// Get process ID
 		var pid uint32
 		_, _, _ = procGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
 		if pid == 0 {
 			return 1
 		}
 
-		// Get executable path via OpenProcess + QueryFullProcessImageName
 		fullPath := getProcessExePath(pid)
 		if fullPath == "" {
 			return 1
@@ -99,7 +96,7 @@ func findWindowsByExeImpl(exeName string) ([]WindowInfo, error) {
 			})
 		}
 
-		return 1 // continue enumeration
+		return 1
 	})
 
 	ret, _, err := procEnumWindows.Call(cb, 0)

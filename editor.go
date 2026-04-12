@@ -72,7 +72,11 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 						OnClicked: func() {
 							if p := ShowProcessPicker(dlg); p != nil {
 								_ = exeLE.SetText(p.ExeName)
-								_ = launchLE.SetText(p.ExePath)
+								// Only auto-fill launch command when empty;
+								// preserves custom launchers/scripts the user set.
+								if launchLE.Text() == "" {
+									_ = launchLE.SetText(p.ExePath)
+								}
 							}
 						},
 					},
