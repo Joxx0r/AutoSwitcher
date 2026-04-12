@@ -84,12 +84,13 @@ func findWindowsByExeImpl(exeName string) ([]WindowInfo, error) {
 			return 1
 		}
 
-		// Get executable name via OpenProcess + QueryFullProcessImageName
-		exePath := getProcessExeName(pid)
-		if exePath == "" {
+		// Get executable path via OpenProcess + QueryFullProcessImageName
+		fullPath := getProcessExePath(pid)
+		if fullPath == "" {
 			return 1
 		}
 
+		exePath := filepath.Base(fullPath)
 		if strings.EqualFold(exePath, exeName) {
 			results = append(results, WindowInfo{
 				HWND:    hwnd,
@@ -109,7 +110,8 @@ func findWindowsByExeImpl(exeName string) ([]WindowInfo, error) {
 	return results, nil
 }
 
-func getProcessExeName(pid uint32) string {
+// getProcessExePath returns the full executable path for the given PID, or "" on failure.
+func getProcessExePath(pid uint32) string {
 	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
 	if err != nil {
 		return ""
@@ -128,8 +130,7 @@ func getProcessExeName(pid uint32) string {
 		return ""
 	}
 
-	fullPath := windows.UTF16ToString(buf[:size])
-	return filepath.Base(fullPath)
+	return windows.UTF16ToString(buf[:size])
 }
 
 // FocusWindow brings the given window to the foreground.
