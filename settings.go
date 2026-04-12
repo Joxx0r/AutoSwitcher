@@ -4,7 +4,7 @@ package main
 
 import (
 	"github.com/lxn/walk"
-	. "github.com/lxn/walk/declarative"
+	decl "github.com/lxn/walk/declarative"
 )
 
 // BindingModel implements walk.ReflectTableModel for displaying bindings.
@@ -18,7 +18,6 @@ func NewBindingModel(bindings []Binding) *BindingModel {
 }
 
 func (m *BindingModel) Items() interface{} {
-	// Convert to a slice of display structs for the table
 	type row struct {
 		Name        string
 		Hotkey      string
@@ -43,7 +42,6 @@ func (m *BindingModel) Items() interface{} {
 
 // ShowSettingsWindow displays the settings dialog with binding management.
 func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Binding)) {
-	// Make a copy of bindings to work with
 	working := make([]Binding, len(bindings))
 	copy(working, bindings)
 
@@ -51,34 +49,33 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 	var tv *walk.TableView
 	model := NewBindingModel(working)
 
-	var refreshTable func()
-	refreshTable = func() {
+	refreshTable := func() {
 		model.items = working
 		model.PublishRowsReset()
 	}
 
-	_, err := Dialog{
+	_, _ = decl.Dialog{
 		AssignTo: &dlg,
 		Title:    "AutoSwitcher Settings",
-		MinSize:  Size{Width: 600, Height: 400},
-		Layout:   VBox{},
-		Children: []Widget{
-			TableView{
+		MinSize:  decl.Size{Width: 600, Height: 400},
+		Layout:   decl.VBox{},
+		Children: []decl.Widget{
+			decl.TableView{
 				AssignTo:         &tv,
 				AlternatingRowBG: true,
 				ColumnsOrderable: true,
 				Model:            model,
-				Columns: []TableViewColumn{
+				Columns: []decl.TableViewColumn{
 					{Title: "Name", Width: 120},
 					{Title: "Hotkey", Width: 100},
 					{Title: "Exe Name", Width: 150},
 					{Title: "Multi-Window", Width: 100},
 				},
 			},
-			Composite{
-				Layout: HBox{},
-				Children: []Widget{
-					PushButton{
+			decl.Composite{
+				Layout: decl.HBox{},
+				Children: []decl.Widget{
+					decl.PushButton{
 						Text: "Add",
 						OnClicked: func() {
 							b := Binding{MultiWindow: "most_recent"}
@@ -88,7 +85,7 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 							}
 						},
 					},
-					PushButton{
+					decl.PushButton{
 						Text: "Edit",
 						OnClicked: func() {
 							idx := tv.CurrentIndex()
@@ -102,7 +99,7 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 							}
 						},
 					},
-					PushButton{
+					decl.PushButton{
 						Text: "Delete",
 						OnClicked: func() {
 							idx := tv.CurrentIndex()
@@ -119,7 +116,7 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 							refreshTable()
 						},
 					},
-					PushButton{
+					decl.PushButton{
 						Text: "Move Up",
 						OnClicked: func() {
 							idx := tv.CurrentIndex()
@@ -131,7 +128,7 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 							_ = tv.SetCurrentIndex(idx - 1)
 						},
 					},
-					PushButton{
+					decl.PushButton{
 						Text: "Move Down",
 						OnClicked: func() {
 							idx := tv.CurrentIndex()
@@ -143,15 +140,15 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 							_ = tv.SetCurrentIndex(idx + 1)
 						},
 					},
-					HSpacer{},
-					PushButton{
+					decl.HSpacer{},
+					decl.PushButton{
 						Text: "Save & Close",
 						OnClicked: func() {
 							onSave(working)
 							dlg.Accept()
 						},
 					},
-					PushButton{
+					decl.PushButton{
 						Text: "Cancel",
 						OnClicked: func() {
 							dlg.Cancel()
@@ -161,8 +158,4 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 			},
 		},
 	}.Run(owner)
-
-	if err != nil {
-		return
-	}
 }

@@ -25,7 +25,7 @@ jobs:
         run: go generate ./...
 
       - name: Build
-        run: go build -v -ldflags="-H windowsgui" -o AutoSwitcher.exe ./...
+        run: go build -v -ldflags="-H windowsgui" -o AutoSwitcher.exe .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

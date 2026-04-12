@@ -77,7 +77,7 @@ func findWindowsByExeImpl(exeName string) ([]WindowInfo, error) {
 
 		// Get process ID
 		var pid uint32
-		procGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+		_, _, _ = procGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
 		if pid == 0 {
 			return 1
 		}
@@ -112,7 +112,7 @@ func getProcessExeName(pid uint32) string {
 	if err != nil {
 		return ""
 	}
-	defer windows.CloseHandle(handle)
+	defer func() { _ = windows.CloseHandle(handle) }()
 
 	var buf [windows.MAX_PATH]uint16
 	size := uint32(len(buf))
@@ -135,7 +135,7 @@ func FocusWindow(hwnd uintptr) error {
 	// Restore if minimized
 	iconic, _, _ := procIsIconic.Call(hwnd)
 	if iconic != 0 {
-		procShowWindow.Call(hwnd, swRestore)
+		_, _, _ = procShowWindow.Call(hwnd, swRestore)
 	}
 
 	// Try SetForegroundWindow directly first (works reliably when running as admin)
@@ -155,8 +155,8 @@ func FocusWindow(hwnd uintptr) error {
 	currentThread, _, _ := procGetCurrentThreadId.Call()
 
 	if foregroundThread != currentThread {
-		procAttachThreadInput.Call(currentThread, foregroundThread, 1) // attach
-		defer procAttachThreadInput.Call(currentThread, foregroundThread, 0) // detach
+		_, _, _ = procAttachThreadInput.Call(currentThread, foregroundThread, 1) // attach
+		defer func() { _, _, _ = procAttachThreadInput.Call(currentThread, foregroundThread, 0) }() // detach
 	}
 
 	ret, _, _ = procSetForegroundWindow.Call(hwnd)

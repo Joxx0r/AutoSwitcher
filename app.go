@@ -18,12 +18,13 @@ var procSetWindowTextW = user32.NewProc("SetWindowTextW")
 
 // App ties all subsystems together.
 type App struct {
-	config     *Config
-	configPath string
-	hotkeys    *HotkeyManager
-	tray       *TrayIcon
-	mw         *walk.MainWindow
-	enabled    bool
+	config       *Config
+	configPath   string
+	hotkeys      *HotkeyManager
+	tray         *TrayIcon
+	mw           *walk.MainWindow
+	enabled      bool
+	settingsOpen bool
 }
 
 // NewApp creates a new App instance.
@@ -111,11 +112,16 @@ func (a *App) SetEnabled(enabled bool) {
 	}
 }
 
-// ShowSettings opens the settings window.
+// ShowSettings opens the settings window, or does nothing if already open.
 func (a *App) ShowSettings() {
+	if a.settingsOpen {
+		return
+	}
+	a.settingsOpen = true
 	ShowSettingsWindow(a.mw, a.config.Bindings, func(bindings []Binding) {
 		a.Reload(bindings)
 	})
+	a.settingsOpen = false
 }
 
 // Exit cleanly shuts down the application.

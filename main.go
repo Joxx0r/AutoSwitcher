@@ -35,18 +35,23 @@ func init() {
 }
 
 func main() {
-	// Single-instance check via named mutex
+	// Single-instance check via named mutex.
+	// CreateMutex returns a valid handle even when the mutex already exists,
+	// so we must check GetLastError for ERROR_ALREADY_EXISTS.
 	mutexNamePtr, _ := windows.UTF16PtrFromString(mutexName)
-	_, err := windows.CreateMutex(nil, false, mutexNamePtr)
-	if err != nil {
-		if err == windows.ERROR_ALREADY_EXISTS {
-			// Another instance is running — tell it to show settings
-			notifyExistingInstance()
-			return
+	handle, err := windows.CreateMutex(nil, false, mutexNamePtr)
+	if err == windows.ERROR_ALREADY_EXISTS {
+		// Another instance is running — tell it to show settings
+		if handle != 0 {
+			_ = windows.CloseHandle(handle)
 		}
-		// Mutex creation failed for another reason — log and continue without protection
+		notifyExistingInstance()
+		return
+	}
+	if err != nil {
 		log.Printf("WARNING: CreateMutex failed: %v — running without single-instance protection", err)
 	}
+	_ = handle // keep handle alive for process lifetime
 
 	// Set up logging
 	setupLogging()
