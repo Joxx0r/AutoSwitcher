@@ -13,7 +13,7 @@ import (
 // ShowBindingEditor displays the binding editor dialog. Returns true if the user saved.
 func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 	var dlg *walk.Dialog
-	var nameLE, exeLE, launchLE, hotkeyLE *walk.LineEdit
+	var nameLE, exeLE, launchLE, hotkeyLE, titlePatternLE *walk.LineEdit
 	var argsTE *walk.TextEdit
 	var multiCB *walk.ComboBox
 	var accepted bool
@@ -21,10 +21,13 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 	capturedMods := make([]string, 0)
 	capturedKey := ""
 
-	multiOptions := []string{"Focus Most Recent", "Cycle Through"}
+	multiOptions := []string{"Focus Most Recent", "Cycle Through", "Toggle (Go Back)"}
 	multiIndex := 0
-	if binding.MultiWindow == "cycle" {
+	switch binding.MultiWindow {
+	case "cycle":
 		multiIndex = 1
+	case "toggle":
+		multiIndex = 2
 	}
 
 	_, _ = decl.Dialog{
@@ -62,7 +65,30 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 			},
 
 			decl.Label{Text: "Executable Name:"},
-			decl.LineEdit{AssignTo: &exeLE, Text: binding.ExeName},
+			decl.Composite{
+				Layout: decl.HBox{MarginsZero: true},
+				Children: []decl.Widget{
+					decl.LineEdit{AssignTo: &exeLE, Text: binding.ExeName},
+					decl.PushButton{
+						Text:    "Pick...",
+						MaxSize: decl.Size{Width: 80},
+						OnClicked: func() {
+							proc := ShowProcessPicker(dlg)
+							if proc != nil {
+								_ = exeLE.SetText(proc.ExeName)
+								_ = launchLE.SetText(proc.ExePath)
+							}
+						},
+					},
+				},
+			},
+
+			decl.Label{Text: "Title Filter:"},
+			decl.LineEdit{
+				AssignTo:    &titlePatternLE,
+				Text:        binding.TitlePattern,
+				ToolTipText: "Optional: only match windows with this text in the title",
+			},
 
 			decl.Label{Text: "Launch Command:"},
 			decl.Composite{
@@ -140,9 +166,13 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 							} else {
 								binding.LaunchArgs = nil
 							}
-							if multiCB.CurrentIndex() == 1 {
+							binding.TitlePattern = titlePatternLE.Text()
+							switch multiCB.CurrentIndex() {
+							case 1:
 								binding.MultiWindow = "cycle"
-							} else {
+							case 2:
+								binding.MultiWindow = "toggle"
+							default:
 								binding.MultiWindow = "most_recent"
 							}
 
