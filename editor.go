@@ -207,6 +207,8 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 		setLabel(text)
 	}
 
+	// hookCB captures state only and posts UI work to the Walk message loop
+	// via dlg.Synchronize. Low-level hooks must return quickly.
 	hookCB := func(vkCode uint32, isKeyDown bool) bool {
 		if done || !ready {
 			return true // suppress keys before dialog is ready
@@ -216,20 +218,22 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 			// Check if it's a modifier key
 			if modBit := VKToModifierBit(vkCode); modBit != 0 {
 				heldModifiers |= modBit
-				updateLabel()
+				dlg.Synchronize(func() { updateLabel() })
 				return true
 			}
 
 			// Escape with no modifiers cancels
 			if vkCode == 0x1B && heldModifiers == 0 {
 				done = true
-				dlg.Cancel()
+				dlg.Synchronize(func() { dlg.Cancel() })
 				return true
 			}
 
 			// Only accept keys that are in our supported vocabulary
 			if !IsSupportedVK(vkCode) {
-				setLabel("Unsupported key — try another or use manual entry")
+				dlg.Synchronize(func() {
+					setLabel("Unsupported key — try another or use manual entry")
+				})
 				return true
 			}
 
@@ -237,7 +241,9 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 			// stealing normal typing (e.g., bare "A" would block all A input)
 			isFunctionKey := vkCode >= 0x70 && vkCode <= 0x87
 			if !isFunctionKey && heldModifiers == 0 {
-				setLabel("Hold a modifier (Ctrl, Alt, Win, Shift) first")
+				dlg.Synchronize(func() {
+					setLabel("Hold a modifier (Ctrl, Alt, Win, Shift) first")
+				})
 				return true
 			}
 
@@ -246,14 +252,14 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 			capturedKey = vkCode
 			capturedMods = heldModifiers
 			done = true
-			dlg.Accept()
+			dlg.Synchronize(func() { dlg.Accept() })
 			return true
 		}
 
 		// Key up — clear modifier bits
 		if modBit := VKToModifierBit(vkCode); modBit != 0 {
 			heldModifiers &^= modBit
-			updateLabel()
+			dlg.Synchronize(func() { updateLabel() })
 		}
 		return true
 	}
@@ -301,9 +307,7 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 	}.Run(owner)
 
 	// Always clean up the hook after the dialog closes
-	if err := uninstallKeyboardHook(); err != nil {
-		log.Printf("warning: failed to remove keyboard hook: %v", err)
-	}
+	uninstallKeyboardHook()
 
 	// If hook failed to install, fall back to manual input
 	if hookFailed {

@@ -93,18 +93,18 @@ func installKeyboardHook(cb func(vkCode uint32, isKeyDown bool) bool, dlgHWND ui
 }
 
 // uninstallKeyboardHook removes the keyboard hook.
-// Returns an error if the unhook call fails; state is only cleared on success.
-func uninstallKeyboardHook() error {
+// Always clears state so the next session can retry, even if the unhook call fails.
+func uninstallKeyboardHook() {
 	if hookState.handle == 0 {
-		return nil
+		return
 	}
 	ret, _, err := procUnhookWindowsHookEx.Call(hookState.handle)
 	if ret == 0 {
 		log.Printf("UnhookWindowsHookEx failed for handle %v: %v", hookState.handle, err)
-		return fmt.Errorf("UnhookWindowsHookEx failed: %w", err)
 	}
+	// Always clear state — a stale handle is worse than a leaked hook,
+	// because it permanently blocks future recorder sessions.
 	hookState.handle = 0
 	hookState.callback = nil
 	hookState.dlgHWND = 0
-	return nil
 }
