@@ -1,3 +1,3 @@
 module github.com/Joxx0r/AutoSwitcher
 
-go 1.25.7
+go 1.24
