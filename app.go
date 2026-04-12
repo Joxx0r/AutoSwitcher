@@ -25,6 +25,7 @@ type App struct {
 	mw           *walk.MainWindow
 	enabled      bool
 	settingsOpen bool
+	settingsDlg  uintptr // HWND of the open settings dialog
 }
 
 // NewApp creates a new App instance.
@@ -47,6 +48,9 @@ func (a *App) Run() error {
 		return err
 	}
 	defer a.mw.Dispose()
+
+	// Hide the owner window — this is a tray-only app
+	a.mw.SetVisible(false)
 
 	// Set window text so second instance can find us via FindWindow
 	windowTitle, _ := windows.UTF16PtrFromString("AutoSwitcher_HiddenWindow")
@@ -81,6 +85,13 @@ func (a *App) Run() error {
 	a.hotkeys = NewHotkeyManager(uintptr(a.mw.Handle()), a.tray.ShowBalloon)
 	a.hotkeys.RegisterAll(a.config.Bindings)
 
+	// Reconcile autostart: sync scheduled task with config
+	if a.config.Autostart && !IsAutostartEnabled() {
+		if err := SetAutostart(true); err != nil {
+			log.Printf("Failed to restore autostart: %v", err)
+		}
+	}
+
 	// Run the message loop
 	a.mw.Run()
 	return nil
@@ -112,16 +123,23 @@ func (a *App) SetEnabled(enabled bool) {
 	}
 }
 
-// ShowSettings opens the settings window, or does nothing if already open.
+// ShowSettings opens the settings window. If already open, brings it to front.
 func (a *App) ShowSettings() {
 	if a.settingsOpen {
+		// Settings dialog is already open — bring it to front
+		if a.settingsDlg != 0 {
+			_ = FocusWindow(a.settingsDlg)
+		}
 		return
 	}
 	a.settingsOpen = true
 	ShowSettingsWindow(a.mw, a.config.Bindings, func(bindings []Binding) {
 		a.Reload(bindings)
+	}, func(hwnd uintptr) {
+		a.settingsDlg = hwnd
 	})
 	a.settingsOpen = false
+	a.settingsDlg = 0
 }
 
 // Exit cleanly shuts down the application.

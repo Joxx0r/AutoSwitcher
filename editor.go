@@ -251,7 +251,7 @@ func validateModifiers(text string) error {
 			continue
 		}
 		if !validModifiers[p] {
-			return fmt.Errorf("Unknown modifier %q. Valid: win, ctrl, alt, shift", p)
+			return fmt.Errorf("unknown modifier %q, valid: win, ctrl, alt, shift", p)
 		}
 	}
 	return nil

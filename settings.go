@@ -41,7 +41,7 @@ func (m *BindingModel) Items() interface{} {
 }
 
 // ShowSettingsWindow displays the settings dialog with binding management.
-func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Binding)) {
+func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Binding), onCreated func(hwnd uintptr)) {
 	working := make([]Binding, len(bindings))
 	copy(working, bindings)
 
@@ -55,6 +55,13 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 	}
 
 	_, _ = decl.Dialog{
+		// Report dialog handle once created
+		OnBoundsChanged: func() {
+			if dlg != nil && onCreated != nil {
+				onCreated(uintptr(dlg.Handle()))
+				onCreated = nil // only report once
+			}
+		},
 		AssignTo: &dlg,
 		Title:    "AutoSwitcher Settings",
 		MinSize:  decl.Size{Width: 600, Height: 400},
