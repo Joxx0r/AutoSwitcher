@@ -23,10 +23,8 @@ var (
 	procGetForegroundWindow      = user32.NewProc("GetForegroundWindow")
 	procAttachThreadInput        = user32.NewProc("AttachThreadInput")
 	procGetWindowTextLength      = user32.NewProc("GetWindowTextLengthW")
-	procGetWindowTextW           = user32.NewProc("GetWindowTextW")
 	procGetWindow                = user32.NewProc("GetWindow")
 	procGetWindowLong            = user32.NewProc("GetWindowLongW")
-	procIsWindow                 = user32.NewProc("IsWindow")
 
 	kernel32                        = windows.NewLazySystemDLL("kernel32.dll")
 	procQueryFullProcessImageName   = kernel32.NewProc("QueryFullProcessImageNameW")
@@ -44,14 +42,12 @@ type WindowInfo struct {
 	HWND    uintptr
 	PID     uint32
 	ExeName string
-	Title   string
 }
 
 // Function variables for testability.
 var findWindowsByExe = findWindowsByExeImpl
 var focusWindow = FocusWindowImpl
 var getForegroundHWND = GetForegroundHWNDImpl
-var isWindowValid = IsWindowValidImpl
 
 // isTopLevelAppWindow returns true if the window handle is a visible, titled,
 // non-tool, non-owned top-level window (i.e., a normal application window).
@@ -97,7 +93,6 @@ func findWindowsByExeImpl(exeName string) ([]WindowInfo, error) {
 				HWND:    hwnd,
 				PID:     pid,
 				ExeName: exePath,
-				Title:   getWindowText(hwnd),
 			})
 		}
 
@@ -214,37 +209,4 @@ func FocusWindowImpl(hwnd uintptr) error {
 func GetForegroundHWNDImpl() uintptr {
 	hwnd, _, _ := procGetForegroundWindow.Call()
 	return hwnd
-}
-
-// getWindowText retrieves the title text of a window.
-func getWindowText(hwnd uintptr) string {
-	titleLen, _, _ := procGetWindowTextLength.Call(hwnd)
-	if titleLen == 0 {
-		return ""
-	}
-	buf := make([]uint16, titleLen+1)
-	procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(titleLen+1))
-	return windows.UTF16ToString(buf)
-}
-
-// filterByTitle filters windows by a case-insensitive substring match on the title.
-// An empty pattern returns all windows.
-func filterByTitle(wins []WindowInfo, pattern string) []WindowInfo {
-	if pattern == "" {
-		return wins
-	}
-	lowerPattern := strings.ToLower(pattern)
-	var result []WindowInfo
-	for _, w := range wins {
-		if strings.Contains(strings.ToLower(w.Title), lowerPattern) {
-			result = append(result, w)
-		}
-	}
-	return result
-}
-
-// IsWindowValidImpl checks if a window handle is still valid using the IsWindow API.
-func IsWindowValidImpl(hwnd uintptr) bool {
-	ret, _, _ := procIsWindow.Call(hwnd)
-	return ret != 0
 }
