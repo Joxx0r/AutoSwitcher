@@ -84,6 +84,55 @@ func TestValidateBinding_InvalidModifier(t *testing.T) {
 	}
 }
 
+func TestValidateWorkspaceBinding_Valid(t *testing.T) {
+	b := &Binding{
+		Name:   "Dev Workspace",
+		Type:   "workspace",
+		Hotkey: HotkeyDef{Modifiers: []string{"win"}, Key: "F1"},
+		WorkspaceItems: []WorkspaceItem{
+			{ExeName: "code.exe", LaunchCommand: "code.exe"},
+			{ExeName: "wt.exe", LaunchCommand: "wt.exe"},
+		},
+	}
+	if err := ValidateBinding(b); err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+}
+
+func TestValidateWorkspaceBinding_NoItems(t *testing.T) {
+	b := &Binding{
+		Name:           "Empty Workspace",
+		Type:           "workspace",
+		Hotkey:         HotkeyDef{Modifiers: []string{"win"}, Key: "F1"},
+		WorkspaceItems: nil,
+	}
+	err := ValidateBinding(b)
+	if err == nil {
+		t.Fatal("expected error for empty workspace")
+	}
+	if err.Error() != "workspace must have at least one item" {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateWorkspaceBinding_ItemMissingExe(t *testing.T) {
+	b := &Binding{
+		Name:   "Bad Workspace",
+		Type:   "workspace",
+		Hotkey: HotkeyDef{Modifiers: []string{"win"}, Key: "F1"},
+		WorkspaceItems: []WorkspaceItem{
+			{ExeName: "", LaunchCommand: "code.exe"},
+		},
+	}
+	err := ValidateBinding(b)
+	if err == nil {
+		t.Fatal("expected error for item missing exe")
+	}
+	if err.Error() != "workspace item 1: executable name is required" {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestValidateModifiers_Valid(t *testing.T) {
 	if err := ValidateModifiers("win, ctrl, alt, shift"); err != nil {
 		t.Errorf("expected no error, got: %v", err)
