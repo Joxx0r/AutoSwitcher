@@ -76,7 +76,9 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 							proc := ShowProcessPicker(dlg)
 							if proc != nil {
 								_ = exeLE.SetText(proc.ExeName)
-								_ = launchLE.SetText(proc.ExePath)
+								if launchLE.Text() == "" {
+									_ = launchLE.SetText(proc.ExePath)
+								}
 							}
 						},
 					},

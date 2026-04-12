@@ -286,8 +286,23 @@ func (hm *HotkeyManager) handleWorkspace(binding *Binding) {
 		}
 	}
 
-	// Focus the first focusable item (so the primary app gets foreground)
-	if len(focuses) > 0 {
+	// Focus the first focusable item, but only if the foreground isn't already
+	// one of our workspace items (avoid stealing focus unnecessarily)
+	foregroundIsOurs := false
+	for _, item := range binding.WorkspaceItems {
+		wins, _ := findWindowsByExe(item.ExeName)
+		for _, w := range wins {
+			if w.HWND == foreground {
+				foregroundIsOurs = true
+				break
+			}
+		}
+		if foregroundIsOurs {
+			break
+		}
+	}
+
+	if !foregroundIsOurs && len(focuses) > 0 {
 		pa := focuses[0]
 		if err := focusWindow(pa.action.Target); err != nil {
 			log.Printf("Workspace %s: failed to focus %s: %v", binding.Name, pa.itemExe, err)

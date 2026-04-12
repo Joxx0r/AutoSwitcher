@@ -223,7 +223,7 @@ func getWindowText(hwnd uintptr) string {
 		return ""
 	}
 	buf := make([]uint16, titleLen+1)
-	procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(titleLen+1))
+	_, _, _ = procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(titleLen+1))
 	return windows.UTF16ToString(buf)
 }
 

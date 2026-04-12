@@ -60,7 +60,9 @@ func showWorkspaceItemEditor(owner walk.Form, item *WorkspaceItem) bool {
 							proc := ShowProcessPicker(dlg)
 							if proc != nil {
 								_ = exeLE.SetText(proc.ExeName)
-								_ = launchLE.SetText(proc.ExePath)
+								if launchLE.Text() == "" {
+									_ = launchLE.SetText(proc.ExePath)
+								}
 							}
 						},
 					},
