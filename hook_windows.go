@@ -21,6 +21,7 @@ var (
 	procCallNextHookEx      = user32.NewProc("CallNextHookEx")
 	procGetModuleHandle     = kernel32.NewProc("GetModuleHandleW")
 	procRtlMoveMemory       = kernel32.NewProc("RtlMoveMemory")
+	procGetAsyncKeyState    = user32.NewProc("GetAsyncKeyState")
 )
 
 // hookState holds the active keyboard hook state.
@@ -90,6 +91,29 @@ func installKeyboardHook(cb func(vkCode uint32, isKeyDown bool) bool, dlgHWND ui
 
 	hookState.handle = handle
 	return nil
+}
+
+// getHeldModifiers checks the current keyboard state and returns a modifier
+// bitmask for any modifiers currently held down. This seeds the recorder state
+// so that modifiers already held when the dialog opens are recognized.
+func getHeldModifiers() uint32 {
+	var mods uint32
+	// GetAsyncKeyState returns negative (high bit set) if key is currently down
+	checkKey := func(vk uintptr, bit uint32) {
+		ret, _, _ := procGetAsyncKeyState.Call(vk)
+		if int16(ret) < 0 {
+			mods |= bit
+		}
+	}
+	checkKey(0xA0, modShift)   // VK_LSHIFT
+	checkKey(0xA1, modShift)   // VK_RSHIFT
+	checkKey(0xA2, modControl) // VK_LCONTROL
+	checkKey(0xA3, modControl) // VK_RCONTROL
+	checkKey(0xA4, modAlt)     // VK_LMENU
+	checkKey(0xA5, modAlt)     // VK_RMENU
+	checkKey(0x5B, modWin)     // VK_LWIN
+	checkKey(0x5C, modWin)     // VK_RWIN
+	return mods
 }
 
 // uninstallKeyboardHook removes the keyboard hook.

@@ -186,10 +186,7 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 	var statusLabel *walk.Label
 	var ready bool // set after dialog widgets are assigned
 
-	var heldModifiers uint32
-	var capturedKey uint32
-	var capturedMods uint32 // snapshot of modifiers at the moment the key is accepted
-	var done bool
+	var state RecorderState
 
 	setLabel := func(text string) {
 		if statusLabel != nil {
@@ -198,7 +195,7 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 	}
 
 	updateLabel := func() {
-		text := FormatModifiers(heldModifiers)
+		text := FormatModifiers(state.HeldModifiers)
 		if text != "" {
 			text += "+..."
 		} else {
@@ -207,59 +204,29 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 		setLabel(text)
 	}
 
-	// hookCB captures state only and posts UI work to the Walk message loop
-	// via dlg.Synchronize. Low-level hooks must return quickly.
+	// hookCB delegates to the pure RecorderState.ProcessKeyEvent and posts
+	// UI work to the Walk message loop via dlg.Synchronize.
 	hookCB := func(vkCode uint32, isKeyDown bool) bool {
-		if done || !ready {
+		if !ready {
 			return true // suppress keys before dialog is ready
 		}
 
-		if isKeyDown {
-			// Check if it's a modifier key
-			if modBit := VKToModifierBit(vkCode); modBit != 0 {
-				heldModifiers |= modBit
-				dlg.Synchronize(func() { updateLabel() })
-				return true
-			}
-
-			// Escape with no modifiers cancels
-			if vkCode == 0x1B && heldModifiers == 0 {
-				done = true
-				dlg.Synchronize(func() { dlg.Cancel() })
-				return true
-			}
-
-			// Only accept keys that are in our supported vocabulary
-			if !IsSupportedVK(vkCode) {
-				dlg.Synchronize(func() {
-					setLabel("Unsupported key — try another or use manual entry")
-				})
-				return true
-			}
-
-			// Non-function keys require at least one modifier to avoid
-			// stealing normal typing (e.g., bare "A" would block all A input)
-			isFunctionKey := vkCode >= 0x70 && vkCode <= 0x87
-			if !isFunctionKey && heldModifiers == 0 {
-				dlg.Synchronize(func() {
-					setLabel("Hold a modifier (Ctrl, Alt, Win, Shift) first")
-				})
-				return true
-			}
-
-			// Non-modifier key completes the recording — snapshot modifiers now
-			// before key-up events can clear them
-			capturedKey = vkCode
-			capturedMods = heldModifiers
-			done = true
-			dlg.Synchronize(func() { dlg.Accept() })
-			return true
-		}
-
-		// Key up — clear modifier bits
-		if modBit := VKToModifierBit(vkCode); modBit != 0 {
-			heldModifiers &^= modBit
+		action := state.ProcessKeyEvent(vkCode, isKeyDown)
+		switch action {
+		case RecorderUpdateLabel:
 			dlg.Synchronize(func() { updateLabel() })
+		case RecorderCancel:
+			dlg.Synchronize(func() { dlg.Cancel() })
+		case RecorderAccept:
+			dlg.Synchronize(func() { dlg.Accept() })
+		case RecorderRejectKey:
+			dlg.Synchronize(func() {
+				setLabel("Unsupported key — try another or use manual entry")
+			})
+		case RecorderNeedModifier:
+			dlg.Synchronize(func() {
+				setLabel("Hold a modifier (Ctrl, Alt, Win, Shift) first")
+			})
 		}
 		return true
 	}
@@ -281,7 +248,11 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 					return
 				}
 				hookInstalled = true
+				// Seed modifier state from currently held keys so modifiers
+				// already pressed when the dialog opens are recognized
+				state.HeldModifiers = getHeldModifiers()
 				ready = true
+				updateLabel()
 			}
 		},
 		Children: []decl.Widget{
@@ -297,7 +268,7 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 					decl.PushButton{
 						Text: "Cancel",
 						OnClicked: func() {
-							done = true
+							state.Done = true
 							dlg.Cancel()
 						},
 					},
@@ -314,9 +285,9 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 		return recordHotkeyManual(owner)
 	}
 
-	if capturedKey != 0 && !ok {
-		modifiers = ModifierBitsToStrings(capturedMods)
-		key = FormatVK(capturedKey)
+	if state.CapturedKey != 0 && !ok {
+		modifiers = ModifierBitsToStrings(state.CapturedMods)
+		key = FormatVK(state.CapturedKey)
 		ok = true
 	}
 
