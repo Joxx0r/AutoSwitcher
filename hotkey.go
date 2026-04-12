@@ -36,7 +36,7 @@ type HotkeyAction struct {
 type HotkeyManager struct {
 	bindings    map[int32]*Binding
 	nextID      int32
-	cycleState  map[string]cycleInfo
+	cycleState  map[string]bindingState
 	hwnd        uintptr
 	showBalloon func(title, msg string)
 }
@@ -46,7 +46,7 @@ func NewHotkeyManager(hwnd uintptr, showBalloon func(title, msg string)) *Hotkey
 	return &HotkeyManager{
 		bindings:    make(map[int32]*Binding),
 		nextID:      1,
-		cycleState:  make(map[string]cycleInfo),
+		cycleState:  make(map[string]bindingState),
 		hwnd:        hwnd,
 		showBalloon: showBalloon,
 	}
@@ -96,13 +96,13 @@ func (hm *HotkeyManager) UnregisterAll() {
 		_, _, _ = procUnregisterHotKey.Call(hm.hwnd, uintptr(id))
 	}
 	hm.bindings = make(map[int32]*Binding)
-	hm.cycleState = make(map[string]cycleInfo)
+	hm.cycleState = make(map[string]bindingState)
 	log.Println("Unregistered all hotkeys")
 }
 
 // ResolveHotkeyAction determines what action to take for a hotkey press.
 // It is a pure function that does not perform any side effects.
-func ResolveHotkeyAction(binding *Binding, wins []WindowInfo, foreground uintptr, state cycleInfo) (HotkeyAction, cycleInfo) {
+func ResolveHotkeyAction(binding *Binding, wins []WindowInfo, foreground uintptr, state bindingState) (HotkeyAction, bindingState) {
 	if len(wins) == 0 {
 		if binding.LaunchCommand != "" {
 			return HotkeyAction{
@@ -126,7 +126,7 @@ func ResolveHotkeyAction(binding *Binding, wins []WindowInfo, foreground uintptr
 	}
 }
 
-func resolveMostRecent(wins []WindowInfo, foreground uintptr, state cycleInfo) (HotkeyAction, cycleInfo) {
+func resolveMostRecent(wins []WindowInfo, foreground uintptr, state bindingState) (HotkeyAction, bindingState) {
 	// If the foreground window is already one of our matches, do nothing
 	for _, w := range wins {
 		if w.HWND == foreground {
@@ -141,7 +141,7 @@ func resolveMostRecent(wins []WindowInfo, foreground uintptr, state cycleInfo) (
 	}, state
 }
 
-func resolveCycle(binding *Binding, wins []WindowInfo, foreground uintptr, state cycleInfo) (HotkeyAction, cycleInfo) {
+func resolveCycle(binding *Binding, wins []WindowInfo, foreground uintptr, state bindingState) (HotkeyAction, bindingState) {
 	// Find the index of the foreground window in our list
 	foregroundIdx := -1
 	for i, w := range wins {
@@ -172,7 +172,7 @@ func resolveCycle(binding *Binding, wins []WindowInfo, foreground uintptr, state
 	}
 
 	target := wins[targetIdx]
-	newState := cycleInfo{lastHWND: target.HWND}
+	newState := bindingState{lastHWND: target.HWND}
 
 	return HotkeyAction{
 		Type:   ActionFocus,

@@ -16,7 +16,7 @@ func TestResolveHotkeyAction_NoWindows_WithLaunch(t *testing.T) {
 		LaunchCommand: "C:\\test.exe",
 		LaunchArgs:    []string{"--flag"},
 	}
-	action, _ := ResolveHotkeyAction(b, nil, 0, cycleInfo{})
+	action, _ := ResolveHotkeyAction(b, nil, 0, bindingState{})
 	if action.Type != ActionLaunch {
 		t.Fatalf("expected ActionLaunch, got %d", action.Type)
 	}
@@ -30,7 +30,7 @@ func TestResolveHotkeyAction_NoWindows_WithLaunch(t *testing.T) {
 
 func TestResolveHotkeyAction_NoWindows_NoLaunch(t *testing.T) {
 	b := &Binding{Name: "test", ExeName: "test.exe"}
-	action, _ := ResolveHotkeyAction(b, nil, 0, cycleInfo{})
+	action, _ := ResolveHotkeyAction(b, nil, 0, bindingState{})
 	if action.Type != ActionNotify {
 		t.Fatalf("expected ActionNotify, got %d", action.Type)
 	}
@@ -42,7 +42,7 @@ func TestResolveHotkeyAction_NoWindows_NoLaunch(t *testing.T) {
 func TestResolveHotkeyAction_MostRecent_ForegroundMatches(t *testing.T) {
 	b := &Binding{Name: "test", ExeName: "test.exe"}
 	wins := []WindowInfo{{HWND: 100}, {HWND: 200}}
-	action, _ := ResolveHotkeyAction(b, wins, 100, cycleInfo{})
+	action, _ := ResolveHotkeyAction(b, wins, 100, bindingState{})
 	if action.Type != ActionNone {
 		t.Fatalf("expected ActionNone, got %d", action.Type)
 	}
@@ -51,7 +51,7 @@ func TestResolveHotkeyAction_MostRecent_ForegroundMatches(t *testing.T) {
 func TestResolveHotkeyAction_MostRecent_FocusTopmost(t *testing.T) {
 	b := &Binding{Name: "test", ExeName: "test.exe"}
 	wins := []WindowInfo{{HWND: 100}, {HWND: 200}}
-	action, _ := ResolveHotkeyAction(b, wins, 999, cycleInfo{})
+	action, _ := ResolveHotkeyAction(b, wins, 999, bindingState{})
 	if action.Type != ActionFocus {
 		t.Fatalf("expected ActionFocus, got %d", action.Type)
 	}
@@ -64,7 +64,7 @@ func TestResolveHotkeyAction_Cycle_AdvancesToNext(t *testing.T) {
 	b := &Binding{Name: "test", ExeName: "test.exe", MultiWindow: "cycle"}
 	wins := []WindowInfo{{HWND: 100}, {HWND: 200}, {HWND: 300}}
 	// Foreground is wins[0], should advance to wins[1]
-	action, state := ResolveHotkeyAction(b, wins, 100, cycleInfo{})
+	action, state := ResolveHotkeyAction(b, wins, 100, bindingState{})
 	if action.Type != ActionFocus {
 		t.Fatalf("expected ActionFocus, got %d", action.Type)
 	}
@@ -80,7 +80,7 @@ func TestResolveHotkeyAction_Cycle_WrapsAround(t *testing.T) {
 	b := &Binding{Name: "test", ExeName: "test.exe", MultiWindow: "cycle"}
 	wins := []WindowInfo{{HWND: 100}, {HWND: 200}, {HWND: 300}}
 	// Foreground is last window, should wrap to first
-	action, state := ResolveHotkeyAction(b, wins, 300, cycleInfo{})
+	action, state := ResolveHotkeyAction(b, wins, 300, bindingState{})
 	if action.Type != ActionFocus {
 		t.Fatalf("expected ActionFocus, got %d", action.Type)
 	}
@@ -96,7 +96,7 @@ func TestResolveHotkeyAction_Cycle_ResumesFromLast(t *testing.T) {
 	b := &Binding{Name: "test", ExeName: "test.exe", MultiWindow: "cycle"}
 	wins := []WindowInfo{{HWND: 100}, {HWND: 200}, {HWND: 300}}
 	// Foreground is not ours, last known is wins[1]
-	action, state := ResolveHotkeyAction(b, wins, 999, cycleInfo{lastHWND: 200})
+	action, state := ResolveHotkeyAction(b, wins, 999, bindingState{lastHWND: 200})
 	if action.Type != ActionFocus {
 		t.Fatalf("expected ActionFocus, got %d", action.Type)
 	}
@@ -112,7 +112,7 @@ func TestResolveHotkeyAction_Cycle_StaleHWND(t *testing.T) {
 	b := &Binding{Name: "test", ExeName: "test.exe", MultiWindow: "cycle"}
 	wins := []WindowInfo{{HWND: 100}, {HWND: 200}}
 	// Last known HWND no longer in list, should start from beginning
-	action, state := ResolveHotkeyAction(b, wins, 999, cycleInfo{lastHWND: 9999})
+	action, state := ResolveHotkeyAction(b, wins, 999, bindingState{lastHWND: 9999})
 	if action.Type != ActionFocus {
 		t.Fatalf("expected ActionFocus, got %d", action.Type)
 	}

@@ -14,9 +14,10 @@ const (
 	modNoRepeat = 0x4000
 )
 
-// cycleInfo tracks the cycle state for a binding.
-type cycleInfo struct {
-	lastHWND uintptr
+// bindingState tracks the state for a binding (cycle position, toggle history).
+type bindingState struct {
+	lastHWND     uintptr // for cycle mode
+	previousHWND uintptr // for toggle mode: window we came FROM
 }
 
 var functionKeys = map[string]uint32{

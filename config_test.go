@@ -208,6 +208,110 @@ func TestSaveConfigCreatesDir(t *testing.T) {
 	}
 }
 
+func TestConfigRoundTripNewFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	original := &Config{
+		Version: 1,
+		Bindings: []Binding{
+			{
+				Name:         "Gmail Chrome",
+				Hotkey:       HotkeyDef{Modifiers: []string{"win"}, Key: "1"},
+				ExeName:      "chrome.exe",
+				TitlePattern: "Gmail",
+				MultiWindow:  "toggle",
+			},
+			{
+				Name:   "Dev Workspace",
+				Hotkey: HotkeyDef{Modifiers: []string{"win"}, Key: "F1"},
+				Type:   "workspace",
+				WorkspaceItems: []WorkspaceItem{
+					{ExeName: "Code.exe", LaunchCommand: `C:\VS Code\Code.exe`, LaunchArgs: []string{"--new-window"}},
+					{ExeName: "WindowsTerminal.exe", TitlePattern: "dev", LaunchCommand: "wt.exe"},
+				},
+			},
+		},
+	}
+
+	if err := SaveConfig(path, original); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if len(loaded.Bindings) != 2 {
+		t.Fatalf("expected 2 bindings, got %d", len(loaded.Bindings))
+	}
+
+	b0 := loaded.Bindings[0]
+	if b0.TitlePattern != "Gmail" {
+		t.Errorf("binding[0].TitlePattern: got %q, want %q", b0.TitlePattern, "Gmail")
+	}
+	if b0.MultiWindow != "toggle" {
+		t.Errorf("binding[0].MultiWindow: got %q, want %q", b0.MultiWindow, "toggle")
+	}
+
+	b1 := loaded.Bindings[1]
+	if b1.Type != "workspace" {
+		t.Errorf("binding[1].Type: got %q, want %q", b1.Type, "workspace")
+	}
+	if len(b1.WorkspaceItems) != 2 {
+		t.Fatalf("binding[1].WorkspaceItems: got %d items, want 2", len(b1.WorkspaceItems))
+	}
+	if b1.WorkspaceItems[0].ExeName != "Code.exe" {
+		t.Errorf("workspace item 0 ExeName: got %q, want %q", b1.WorkspaceItems[0].ExeName, "Code.exe")
+	}
+	if b1.WorkspaceItems[1].TitlePattern != "dev" {
+		t.Errorf("workspace item 1 TitlePattern: got %q, want %q", b1.WorkspaceItems[1].TitlePattern, "dev")
+	}
+	if len(b1.WorkspaceItems[0].LaunchArgs) != 1 || b1.WorkspaceItems[0].LaunchArgs[0] != "--new-window" {
+		t.Errorf("workspace item 0 LaunchArgs: got %v", b1.WorkspaceItems[0].LaunchArgs)
+	}
+}
+
+func TestConfigBackwardCompat(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	// Old-format JSON without new fields
+	oldJSON := `{
+		"version": 1,
+		"bindings": [
+			{
+				"name": "Notepad",
+				"hotkey": {"modifiers": ["win"], "key": "1"},
+				"exe_name": "notepad.exe",
+				"launch_command": "",
+				"launch_args": null,
+				"multi_window": "most_recent"
+			}
+		]
+	}`
+	if err := os.WriteFile(path, []byte(oldJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	b := loaded.Bindings[0]
+	if b.TitlePattern != "" {
+		t.Errorf("expected empty TitlePattern, got %q", b.TitlePattern)
+	}
+	if b.Type != "" {
+		t.Errorf("expected empty Type, got %q", b.Type)
+	}
+	if b.WorkspaceItems != nil {
+		t.Errorf("expected nil WorkspaceItems, got %v", b.WorkspaceItems)
+	}
+}
+
 func TestHotkeyDefFormat(t *testing.T) {
 	tests := []struct {
 		hotkey HotkeyDef

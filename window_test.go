@@ -4,6 +4,44 @@ package main
 
 import "testing"
 
+func TestFilterByTitle(t *testing.T) {
+	wins := []WindowInfo{
+		{HWND: 1, Title: "Gmail - Google Chrome"},
+		{HWND: 2, Title: "YouTube - Google Chrome"},
+		{HWND: 3, Title: "Visual Studio Code"},
+	}
+
+	// Substring match
+	result := filterByTitle(wins, "Gmail")
+	if len(result) != 1 || result[0].HWND != 1 {
+		t.Errorf("substring match: expected HWND 1, got %v", result)
+	}
+
+	// Case insensitive
+	result = filterByTitle(wins, "gmail")
+	if len(result) != 1 || result[0].HWND != 1 {
+		t.Errorf("case insensitive: expected HWND 1, got %v", result)
+	}
+
+	// Empty pattern returns all
+	result = filterByTitle(wins, "")
+	if len(result) != 3 {
+		t.Errorf("empty pattern: expected 3 results, got %d", len(result))
+	}
+
+	// No matches returns empty
+	result = filterByTitle(wins, "Firefox")
+	if len(result) != 0 {
+		t.Errorf("no matches: expected 0 results, got %d", len(result))
+	}
+
+	// Multiple matches
+	result = filterByTitle(wins, "Google Chrome")
+	if len(result) != 2 {
+		t.Errorf("multiple matches: expected 2 results, got %d", len(result))
+	}
+}
+
 func TestMatchExeName(t *testing.T) {
 	tests := []struct {
 		processExe string
