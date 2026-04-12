@@ -186,7 +186,9 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 	var statusLabel *walk.Label
 	var ready bool // set after dialog widgets are assigned
 
-	var state RecorderState
+	state := RecorderState{
+		ResyncModifiers: getHeldModifiers,
+	}
 
 	setLabel := func(text string) {
 		if statusLabel != nil {
@@ -280,8 +282,11 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 	// Always clean up the hook after the dialog closes
 	uninstallKeyboardHook()
 
-	// If hook failed to install, fall back to manual input
+	// If hook failed to install, notify user and fall back to manual input
 	if hookFailed {
+		walk.MsgBox(owner, "Recording Unavailable",
+			"Key capture is not available. Falling back to manual entry.",
+			walk.MsgBoxIconInformation)
 		return recordHotkeyManual(owner)
 	}
 

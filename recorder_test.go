@@ -126,6 +126,41 @@ func TestRecorderProcessKeyEvent_SuppressAfterDone(t *testing.T) {
 	}
 }
 
+func TestRecorderProcessKeyEvent_ResyncOnFocusRegain(t *testing.T) {
+	// Simulate: user holds Ctrl, dialog loses focus, Ctrl is released elsewhere,
+	// dialog regains focus, user presses 'A'. ResyncModifiers should detect
+	// Ctrl is no longer held and reject the bare key.
+	s := &RecorderState{
+		HeldModifiers: modControl, // stale — was held when focus was lost
+		ResyncModifiers: func() uint32 {
+			return 0 // nothing held anymore
+		},
+	}
+
+	action := s.ProcessKeyEvent(0x41, true) // 'A' with stale Ctrl
+	if action != RecorderNeedModifier {
+		t.Errorf("resync bare A: got %d, want RecorderNeedModifier", action)
+	}
+}
+
+func TestRecorderProcessKeyEvent_ResyncKeepsRealModifiers(t *testing.T) {
+	// ResyncModifiers confirms Win is still held
+	s := &RecorderState{
+		HeldModifiers: modWin,
+		ResyncModifiers: func() uint32 {
+			return modWin // still held
+		},
+	}
+
+	action := s.ProcessKeyEvent(0x31, true) // '1' with Win
+	if action != RecorderAccept {
+		t.Errorf("resync Win+1: got %d, want RecorderAccept", action)
+	}
+	if s.CapturedMods != modWin {
+		t.Errorf("CapturedMods = 0x%X, want 0x%X", s.CapturedMods, modWin)
+	}
+}
+
 func TestRecorderProcessKeyEvent_ModifierSnapshotBeforeRelease(t *testing.T) {
 	s := &RecorderState{}
 

@@ -29,6 +29,23 @@ func ValidateBinding(b *Binding) error {
 			return fmt.Errorf("unknown modifier %q, valid: win, ctrl, alt, shift", m)
 		}
 	}
+	if err := ValidateHotkeyRules(b.Hotkey.Key, b.Hotkey.Modifiers); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ValidateHotkeyRules enforces shared hotkey policy: non-function keys require
+// at least one modifier. Function keys (F1-F24) are allowed without modifiers.
+func ValidateHotkeyRules(key string, modifiers []string) error {
+	vk, err := ParseKey(key)
+	if err != nil {
+		return nil // let ParseKey validation handle unknown keys
+	}
+	isFunctionKey := vk >= 0x70 && vk <= 0x87
+	if !isFunctionKey && len(modifiers) == 0 {
+		return fmt.Errorf("non-function keys require at least one modifier (ctrl, alt, shift, or win)")
+	}
 	return nil
 }
 

@@ -18,6 +18,10 @@ type RecorderState struct {
 	CapturedKey   uint32
 	CapturedMods  uint32
 	Done          bool
+	// ResyncModifiers, if set, is called before accepting a non-modifier key
+	// to refresh HeldModifiers from the actual keyboard state. This prevents
+	// stale modifiers when the dialog loses and regains focus.
+	ResyncModifiers func() uint32
 }
 
 // ProcessKeyEvent is the pure decision function for the recorder.
@@ -44,6 +48,12 @@ func (s *RecorderState) ProcessKeyEvent(vkCode uint32, isKeyDown bool) RecorderA
 		// Unsupported key
 		if !IsSupportedVK(vkCode) {
 			return RecorderRejectKey
+		}
+
+		// Resync modifier state from actual keyboard before accepting.
+		// This prevents stale modifiers when the dialog lost and regained focus.
+		if s.ResyncModifiers != nil {
+			s.HeldModifiers = s.ResyncModifiers()
 		}
 
 		// Non-function keys require at least one modifier
