@@ -3,6 +3,7 @@
 package main
 
 import (
+	"log"
 	"path/filepath"
 	"strings"
 
@@ -47,6 +48,19 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 					},
 					decl.PushButton{
 						Text:    "Record",
+						MaxSize: decl.Size{Width: 80},
+						OnClicked: func() {
+							mods, key, ok := recordHotkeyByKeypress(dlg)
+							if ok {
+								capturedMods = mods
+								capturedKey = key
+								hk := HotkeyDef{Modifiers: mods, Key: key}
+								_ = hotkeyLE.SetText(hk.Format())
+							}
+						},
+					},
+					decl.PushButton{
+						Text:    "Edit...",
 						MaxSize: decl.Size{Width: 80},
 						OnClicked: func() {
 							mods, key, ok := recordHotkeyManual(dlg)
@@ -183,6 +197,127 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 	return accepted
 }
 
+// recordHotkeyByKeypress captures a hotkey by listening for actual key presses.
+// Uses a temporary low-level keyboard hook to intercept all keys including Win+X combos.
+// The hook is scoped to the recording dialog's lifetime only.
+func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok bool) {
+	var dlg *walk.Dialog
+	var statusLabel *walk.Label
+	var ready bool // set after dialog widgets are assigned
+
+	state := RecorderState{
+		ResyncModifiers: getHeldModifiers,
+	}
+
+	setLabel := func(text string) {
+		if statusLabel != nil {
+			_ = statusLabel.SetText(text)
+		}
+	}
+
+	updateLabel := func() {
+		text := FormatModifiers(state.HeldModifiers)
+		if text != "" {
+			text += "+..."
+		} else {
+			text = "Press your hotkey combination..."
+		}
+		setLabel(text)
+	}
+
+	// hookCB delegates to the pure RecorderState.ProcessKeyEvent and posts
+	// UI work to the Walk message loop via dlg.Synchronize.
+	hookCB := func(vkCode uint32, isKeyDown bool) bool {
+		if !ready {
+			return true // suppress keys before dialog is ready
+		}
+
+		action := state.ProcessKeyEvent(vkCode, isKeyDown)
+		switch action {
+		case RecorderUpdateLabel:
+			dlg.Synchronize(func() { updateLabel() })
+		case RecorderCancel:
+			dlg.Synchronize(func() { dlg.Cancel() })
+		case RecorderAccept:
+			dlg.Synchronize(func() { dlg.Accept() })
+		case RecorderRejectKey:
+			dlg.Synchronize(func() {
+				setLabel("Unsupported key — try another or use manual entry")
+			})
+		case RecorderNeedModifier:
+			dlg.Synchronize(func() {
+				setLabel("Hold a modifier (Ctrl, Alt, Win, Shift) first")
+			})
+		}
+		return true
+	}
+
+	var hookInstalled bool
+	var hookFailed bool
+
+	_, _ = decl.Dialog{
+		AssignTo: &dlg,
+		Title:    "Record Hotkey",
+		MinSize:  decl.Size{Width: 350, Height: 150},
+		Layout:   decl.VBox{},
+		OnBoundsChanged: func() {
+			if !hookInstalled && !hookFailed && dlg != nil {
+				if err := installKeyboardHook(hookCB, uintptr(dlg.Handle())); err != nil {
+					log.Printf("keyboard hook failed, closing recorder: %v", err)
+					hookFailed = true
+					dlg.Cancel()
+					return
+				}
+				hookInstalled = true
+				// Seed modifier state from currently held keys so modifiers
+				// already pressed when the dialog opens are recognized
+				state.HeldModifiers = getHeldModifiers()
+				ready = true
+				updateLabel()
+			}
+		},
+		Children: []decl.Widget{
+			decl.Label{
+				AssignTo:  &statusLabel,
+				Text:      "Press your hotkey combination...",
+				Alignment: decl.AlignHCenterVCenter,
+			},
+			decl.Composite{
+				Layout: decl.HBox{},
+				Children: []decl.Widget{
+					decl.HSpacer{},
+					decl.PushButton{
+						Text: "Cancel",
+						OnClicked: func() {
+							state.Done = true
+							dlg.Cancel()
+						},
+					},
+				},
+			},
+		},
+	}.Run(owner)
+
+	// Always clean up the hook after the dialog closes
+	uninstallKeyboardHook()
+
+	// If hook failed to install, notify user and fall back to manual input
+	if hookFailed {
+		walk.MsgBox(owner, "Recording Unavailable",
+			"Key capture is not available. Falling back to manual entry.",
+			walk.MsgBoxIconInformation)
+		return recordHotkeyManual(owner)
+	}
+
+	if state.CapturedKey != 0 && !ok {
+		modifiers = ModifierBitsToStrings(state.CapturedMods)
+		key = FormatVK(state.CapturedKey)
+		ok = true
+	}
+
+	return modifiers, key, ok
+}
+
 // recordHotkeyManual provides a text-based hotkey input dialog.
 func recordHotkeyManual(owner walk.Form) (modifiers []string, key string, ok bool) {
 	var dlg *walk.Dialog
@@ -231,6 +366,18 @@ func recordHotkeyManual(owner walk.Form) (modifiers []string, key string, ok boo
 								walk.MsgBox(dlg, "Validation", err.Error(), walk.MsgBoxIconWarning)
 								return
 							}
+							// Parse modifiers to pass to ValidateHotkeyRules
+							var mods []string
+							for _, m := range strings.Split(modsLE.Text(), ",") {
+								m = strings.TrimSpace(m)
+								if m != "" {
+									mods = append(mods, m)
+								}
+							}
+							if err := ValidateHotkeyRules(keyLE.Text(), mods); err != nil {
+								walk.MsgBox(dlg, "Validation", err.Error(), walk.MsgBoxIconWarning)
+								return
+							}
 							// Capture values while widgets are still alive
 							capturedModsText = modsLE.Text()
 							capturedKeyText = keyLE.Text()
@@ -268,7 +415,14 @@ func recordHotkeyManual(owner walk.Form) (modifiers []string, key string, ok boo
 		}
 	}
 
-	key = strings.TrimSpace(capturedKeyText)
+	// Canonicalize key name through ParseKey→FormatVK for consistent output
+	// (e.g., "esc" → "ESCAPE", "del" → "DELETE")
+	rawKey := strings.TrimSpace(capturedKeyText)
+	if vk, err := ParseKey(rawKey); err == nil {
+		key = FormatVK(vk)
+	} else {
+		key = rawKey
+	}
 	return modifiers, key, true
 }
 

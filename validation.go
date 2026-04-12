@@ -32,6 +32,20 @@ func ValidateBinding(b *Binding) error {
 	return nil
 }
 
+// ValidateHotkeyRules enforces shared hotkey policy: non-function keys require
+// at least one modifier. Function keys (F1-F24) are allowed without modifiers.
+func ValidateHotkeyRules(key string, modifiers []string) error {
+	vk, err := ParseKey(key)
+	if err != nil {
+		return nil // let ParseKey validation handle unknown keys
+	}
+	isFunctionKey := vk >= 0x70 && vk <= 0x87
+	if !isFunctionKey && len(modifiers) == 0 {
+		return fmt.Errorf("non-function keys require at least one modifier (ctrl, alt, shift, or win)")
+	}
+	return nil
+}
+
 // ValidateModifiers checks that all comma-separated modifier names are valid.
 func ValidateModifiers(text string) error {
 	parts := strings.Split(text, ",")
