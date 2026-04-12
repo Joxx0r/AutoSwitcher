@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 )
 
 var (
@@ -282,6 +283,28 @@ func (hm *HotkeyManager) handleWorkspace(binding *Binding) {
 			log.Println(errMsg)
 			if hm.showBalloon != nil {
 				hm.showBalloon("Launch Failed", errMsg)
+			}
+		}
+	}
+
+	// If we launched apps but had nothing to focus, re-discover windows
+	// so newly launched apps can be focused on this same keypress
+	if len(launches) > 0 && len(focuses) == 0 {
+		time.Sleep(500 * time.Millisecond) // brief wait for launched apps to create windows
+		for _, item := range binding.WorkspaceItems {
+			wins, err := findWindowsByExe(item.ExeName)
+			if err != nil || len(wins) == 0 {
+				continue
+			}
+			if item.TitlePattern != "" {
+				wins = filterByTitle(wins, item.TitlePattern)
+			}
+			if len(wins) > 0 {
+				focuses = append(focuses, pendingAction{
+					action:  HotkeyAction{Type: ActionFocus, Target: wins[0].HWND},
+					itemExe: item.ExeName,
+				})
+				break // focus the first app we find
 			}
 		}
 	}

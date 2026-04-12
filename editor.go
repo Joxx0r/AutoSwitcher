@@ -249,9 +249,10 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 		switch action {
 		case RecorderUpdateLabel:
 			dlg.Synchronize(func() { updateLabel() })
-			// Don't suppress modifier keys — let the OS process them so
-			// GetAsyncKeyState stays accurate for the resync check
-			return false
+			// Suppress Win key to prevent Start menu, but let other modifiers
+			// through so GetAsyncKeyState stays accurate for resync
+			isWinKey := vkCode == 0x5B || vkCode == 0x5C
+			return isWinKey
 		case RecorderCancel:
 			dlg.Synchronize(func() { dlg.Cancel() })
 		case RecorderAccept:
