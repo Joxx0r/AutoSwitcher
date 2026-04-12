@@ -93,14 +93,18 @@ func installKeyboardHook(cb func(vkCode uint32, isKeyDown bool) bool, dlgHWND ui
 }
 
 // uninstallKeyboardHook removes the keyboard hook.
-func uninstallKeyboardHook() {
-	if hookState.handle != 0 {
-		ret, _, _ := procUnhookWindowsHookEx.Call(hookState.handle)
-		if ret == 0 {
-			log.Printf("UnhookWindowsHookEx failed for handle %v", hookState.handle)
-		}
-		hookState.handle = 0
-		hookState.callback = nil
-		hookState.dlgHWND = 0
+// Returns an error if the unhook call fails; state is only cleared on success.
+func uninstallKeyboardHook() error {
+	if hookState.handle == 0 {
+		return nil
 	}
+	ret, _, err := procUnhookWindowsHookEx.Call(hookState.handle)
+	if ret == 0 {
+		log.Printf("UnhookWindowsHookEx failed for handle %v: %v", hookState.handle, err)
+		return fmt.Errorf("UnhookWindowsHookEx failed: %w", err)
+	}
+	hookState.handle = 0
+	hookState.callback = nil
+	hookState.dlgHWND = 0
+	return nil
 }

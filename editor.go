@@ -188,6 +188,7 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 
 	var heldModifiers uint32
 	var capturedKey uint32
+	var capturedMods uint32 // snapshot of modifiers at the moment the key is accepted
 	var done bool
 
 	setLabel := func(text string) {
@@ -240,8 +241,10 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 				return true
 			}
 
-			// Non-modifier key completes the recording
+			// Non-modifier key completes the recording — snapshot modifiers now
+			// before key-up events can clear them
 			capturedKey = vkCode
+			capturedMods = heldModifiers
 			done = true
 			dlg.Accept()
 			return true
@@ -298,7 +301,9 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 	}.Run(owner)
 
 	// Always clean up the hook after the dialog closes
-	uninstallKeyboardHook()
+	if err := uninstallKeyboardHook(); err != nil {
+		log.Printf("warning: failed to remove keyboard hook: %v", err)
+	}
 
 	// If hook failed to install, fall back to manual input
 	if hookFailed {
@@ -306,7 +311,7 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 	}
 
 	if capturedKey != 0 && !ok {
-		modifiers = ModifierBitsToStrings(heldModifiers)
+		modifiers = ModifierBitsToStrings(capturedMods)
 		key = FormatVK(capturedKey)
 		ok = true
 	}
@@ -399,7 +404,14 @@ func recordHotkeyManual(owner walk.Form) (modifiers []string, key string, ok boo
 		}
 	}
 
-	key = strings.TrimSpace(capturedKeyText)
+	// Canonicalize key name through ParseKey→FormatVK for consistent output
+	// (e.g., "esc" → "ESCAPE", "del" → "DELETE")
+	rawKey := strings.TrimSpace(capturedKeyText)
+	if vk, err := ParseKey(rawKey); err == nil {
+		key = FormatVK(vk)
+	} else {
+		key = rawKey
+	}
 	return modifiers, key, true
 }
 
