@@ -281,6 +281,9 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 							if !done && dlg != nil {
 								if err := installKeyboardHook(hookCB, uintptr(dlg.Handle())); err != nil {
 									log.Printf("re-install keyboard hook failed: %v", err)
+									walk.MsgBox(dlg, "Recording Error",
+										"Could not resume key capture. Please try again or use manual entry.",
+										walk.MsgBoxIconWarning)
 									dlg.Cancel()
 								}
 							}

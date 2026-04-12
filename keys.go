@@ -99,8 +99,22 @@ func ParseModifiers(mods []string) uint32 {
 	return result
 }
 
+// canonicalNames maps VK codes to their preferred display name when multiple
+// aliases exist (e.g., ENTER vs RETURN). This ensures deterministic output
+// regardless of Go map iteration order.
+var canonicalNames = map[uint32]string{
+	0x0D: "ENTER",
+	0x1B: "ESCAPE",
+	0x2E: "DELETE",
+	0x2D: "INSERT",
+}
+
 // FormatVK returns a human-readable name for a virtual key code.
 func FormatVK(vk uint32) string {
+	// Check canonical names first for deterministic output with aliased keys
+	if name, ok := canonicalNames[vk]; ok {
+		return name
+	}
 	for name, code := range functionKeys {
 		if code == vk {
 			return name

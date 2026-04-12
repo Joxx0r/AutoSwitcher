@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A standalone Windows hotkey manager written in Go. Binds global hotkeys to focus existing application windows or launch them if not running. Replaces AutoHotkey (which is banned by anti-cheat vendors) using only standard Win32 APIs — no hooks, no DLL injection, no drivers.
+A standalone Windows hotkey manager written in Go. Binds global hotkeys to focus existing application windows or launch them if not running. Replaces AutoHotkey (which is banned by anti-cheat vendors) using only standard Win32 APIs — no permanent hooks, no DLL injection, no drivers.
 
 ## Quick Start
 

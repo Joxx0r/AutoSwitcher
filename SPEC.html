@@ -253,7 +253,7 @@
 
 <h3>Problem Statement</h3>
 
-<p>Developers working across many applications (IDE, terminal, browser, Unreal Editor, Discord) need fast window switching beyond Alt+Tab. Existing solutions like AutoHotkey are flagged/banned by anti-cheat systems. AutoSwitcher solves this by being a clean, standalone binary using only standard Win32 APIs &mdash; no hooks, no DLL injection, no drivers.</p>
+<p>Developers working across many applications (IDE, terminal, browser, Unreal Editor, Discord) need fast window switching beyond Alt+Tab. Existing solutions like AutoHotkey are flagged/banned by anti-cheat systems. AutoSwitcher solves this by being a clean, standalone binary using only standard Win32 APIs &mdash; no permanent hooks, no DLL injection, no drivers.</p>
 
 <hr>
 
@@ -265,7 +265,8 @@
   <ul>
     <li>Use the <strong>Win32 <code>RegisterHotKey</code> API</strong> for all hotkey registration
       <ul>
-        <li>No <code>SetWindowsHookEx</code>, no low-level keyboard hooks, no drivers</li>
+        <li>No permanent <code>SetWindowsHookEx</code> or low-level keyboard hooks for hotkey listening, no drivers</li>
+        <li>A temporary <code>WH_KEYBOARD_LL</code> hook is used only during the hotkey recording dialog to capture Win+X and Alt+X combos, then immediately removed</li>
         <li>This is the safest approach for anti-cheat compatibility</li>
       </ul>
     </li>
