@@ -16,7 +16,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.25"
 
       - name: Install go-winres
         run: go install github.com/tc-hib/go-winres@v0.3.3
@@ -42,7 +42,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.25"
 
       # Tests run WITHOUT the admin manifest .syso so they don't require elevation
       - name: Test
@@ -57,7 +57,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.25"
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
@@ -73,7 +73,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.25"
 
       - name: Vet
         run: go vet ./...
