@@ -10,8 +10,13 @@ import (
 
 const createNewProcessGroup = 0x00000200
 
+var launchApp = LaunchAppImpl
+
 // LaunchApp starts the given command in a detached process.
-func LaunchApp(command string, args []string) error {
+func LaunchApp(command string, args []string) error { return launchApp(command, args) }
+
+// LaunchAppImpl is the real implementation of LaunchApp.
+func LaunchAppImpl(command string, args []string) error {
 	if command == "" {
 		return fmt.Errorf("no launch command specified")
 	}

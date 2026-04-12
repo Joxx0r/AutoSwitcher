@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 import (
@@ -122,6 +120,34 @@ func TestFormatModifiers(t *testing.T) {
 		got := FormatModifiers(tt.mods)
 		if got != tt.want {
 			t.Errorf("FormatModifiers(0x%04X) = %q, want %q", tt.mods, got, tt.want)
+		}
+	}
+}
+
+func TestIsModifierVK(t *testing.T) {
+	tests := []struct {
+		vk   uint32
+		want bool
+	}{
+		{0xA0, true},  // VK_LSHIFT
+		{0xA1, true},  // VK_RSHIFT
+		{0xA2, true},  // VK_LCONTROL
+		{0xA3, true},  // VK_RCONTROL
+		{0xA4, true},  // VK_LMENU
+		{0xA5, true},  // VK_RMENU
+		{0x5B, true},  // VK_LWIN
+		{0x5C, true},  // VK_RWIN
+		{0x10, true},  // VK_SHIFT
+		{0x11, true},  // VK_CONTROL
+		{0x12, true},  // VK_MENU
+		{0x41, false}, // A
+		{0x74, false}, // F5
+	}
+
+	for _, tt := range tests {
+		got := IsModifierVK(tt.vk)
+		if got != tt.want {
+			t.Errorf("IsModifierVK(0x%02X) = %v, want %v", tt.vk, got, tt.want)
 		}
 	}
 }

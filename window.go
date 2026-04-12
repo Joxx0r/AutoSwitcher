@@ -44,8 +44,10 @@ type WindowInfo struct {
 	ExeName string
 }
 
-// findWindowsByExe is the function used to find windows. It's a variable so tests can override it.
+// Function variables for testability.
 var findWindowsByExe = findWindowsByExeImpl
+var focusWindow = FocusWindowImpl
+var getForegroundHWND = GetForegroundHWNDImpl
 
 func findWindowsByExeImpl(exeName string) ([]WindowInfo, error) {
 	var results []WindowInfo
@@ -131,7 +133,10 @@ func getProcessExeName(pid uint32) string {
 }
 
 // FocusWindow brings the given window to the foreground.
-func FocusWindow(hwnd uintptr) error {
+func FocusWindow(hwnd uintptr) error { return focusWindow(hwnd) }
+
+// FocusWindowImpl is the real implementation of FocusWindow.
+func FocusWindowImpl(hwnd uintptr) error {
 	// Restore if minimized
 	iconic, _, _ := procIsIconic.Call(hwnd)
 	if iconic != 0 {
@@ -145,7 +150,7 @@ func FocusWindow(hwnd uintptr) error {
 	}
 
 	// Fallback: AttachThreadInput trick
-	foregroundHwnd := GetForegroundHWND()
+	foregroundHwnd := getForegroundHWND()
 	if foregroundHwnd == 0 {
 		return fmt.Errorf("no foreground window to attach to")
 	}
@@ -168,14 +173,17 @@ func FocusWindow(hwnd uintptr) error {
 	_, _, _ = procBringWindowToTop.Call(hwnd)
 
 	// Verify if the window actually became foreground
-	if GetForegroundHWND() == hwnd {
+	if getForegroundHWND() == hwnd {
 		return nil
 	}
 	return fmt.Errorf("failed to bring window to foreground")
 }
 
 // GetForegroundHWND returns the handle of the currently focused window.
-func GetForegroundHWND() uintptr {
+func GetForegroundHWND() uintptr { return getForegroundHWND() }
+
+// GetForegroundHWNDImpl is the real implementation of GetForegroundHWND.
+func GetForegroundHWNDImpl() uintptr {
 	hwnd, _, _ := procGetForegroundWindow.Call()
 	return hwnd
 }

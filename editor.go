@@ -3,16 +3,11 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/lxn/walk"
 	decl "github.com/lxn/walk/declarative"
 )
-
-var validModifiers = map[string]bool{
-	"win": true, "ctrl": true, "alt": true, "shift": true,
-}
 
 // ShowBindingEditor displays the binding editor dialog. Returns true if the user saved.
 func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
@@ -110,27 +105,22 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 					decl.PushButton{
 						Text: "OK",
 						OnClicked: func() {
-							if nameLE.Text() == "" {
-								walk.MsgBox(dlg, "Validation", "Name is required", walk.MsgBoxIconWarning)
-								return
+							// Build candidate binding for validation
+							candidate := *binding
+							candidate.Name = nameLE.Text()
+							candidate.ExeName = exeLE.Text()
+							if capturedKey != "" {
+								candidate.Hotkey.Modifiers = capturedMods
+								candidate.Hotkey.Key = capturedKey
 							}
-							if exeLE.Text() == "" {
-								walk.MsgBox(dlg, "Validation", "Executable name is required", walk.MsgBoxIconWarning)
+							if err := ValidateBinding(&candidate); err != nil {
+								walk.MsgBox(dlg, "Validation", err.Error(), walk.MsgBoxIconWarning)
 								return
-							}
-							if hotkeyLE.Text() == "" && len(capturedMods) == 0 && capturedKey == "" {
-								if binding.Hotkey.Key == "" {
-									walk.MsgBox(dlg, "Validation", "Hotkey is required", walk.MsgBoxIconWarning)
-									return
-								}
 							}
 
-							binding.Name = nameLE.Text()
-							if capturedKey != "" {
-								binding.Hotkey.Modifiers = capturedMods
-								binding.Hotkey.Key = capturedKey
-							}
-							binding.ExeName = exeLE.Text()
+							binding.Name = candidate.Name
+							binding.Hotkey = candidate.Hotkey
+							binding.ExeName = candidate.ExeName
 							binding.LaunchCommand = launchLE.Text()
 							if argsText := strings.TrimSpace(argsTE.Text()); argsText != "" {
 								lines := strings.Split(argsText, "\n")
@@ -213,7 +203,7 @@ func recordHotkeyManual(owner walk.Form) (modifiers []string, key string, ok boo
 								walk.MsgBox(dlg, "Validation", "Invalid key: "+err.Error(), walk.MsgBoxIconWarning)
 								return
 							}
-							if err := validateModifiers(modsLE.Text()); err != nil {
+							if err := ValidateModifiers(modsLE.Text()); err != nil {
 								walk.MsgBox(dlg, "Validation", err.Error(), walk.MsgBoxIconWarning)
 								return
 							}
@@ -248,17 +238,3 @@ func recordHotkeyManual(owner walk.Form) (modifiers []string, key string, ok boo
 	return modifiers, key, true
 }
 
-// validateModifiers checks that all comma-separated modifier names are valid.
-func validateModifiers(text string) error {
-	parts := strings.Split(text, ",")
-	for _, p := range parts {
-		p = strings.TrimSpace(strings.ToLower(p))
-		if p == "" {
-			continue
-		}
-		if !validModifiers[p] {
-			return fmt.Errorf("unknown modifier %q, valid: win, ctrl, alt, shift", p)
-		}
-	}
-	return nil
-}
