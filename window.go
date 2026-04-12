@@ -134,11 +134,7 @@ func matchExeName(processExe, pattern string) bool {
 
 	// Prefix match: "wez" matches "wezterm-gui.exe"
 	nameWithoutExt := strings.TrimSuffix(processExe, ".exe")
-	if strings.HasPrefix(nameWithoutExt, pattern) {
-		return true
-	}
-
-	return false
+	return strings.HasPrefix(nameWithoutExt, pattern)
 }
 
 func getProcessExeName(pid uint32) string {
