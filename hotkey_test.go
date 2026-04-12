@@ -125,15 +125,3 @@ func TestFormatModifiers(t *testing.T) {
 		}
 	}
 }
-
-func TestIsModifierVK(t *testing.T) {
-	if !IsModifierVK(0x5B) { // VK_LWIN
-		t.Error("expected VK_LWIN to be a modifier")
-	}
-	if !IsModifierVK(0xA2) { // VK_LCONTROL
-		t.Error("expected VK_LCONTROL to be a modifier")
-	}
-	if IsModifierVK(0x41) { // 'A'
-		t.Error("expected 'A' to NOT be a modifier")
-	}
-}

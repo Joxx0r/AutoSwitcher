@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"unsafe"
-
-	"golang.org/x/sys/windows"
 )
 
 var (
@@ -160,7 +157,7 @@ func (hm *HotkeyManager) handleMostRecent(binding *Binding, wins []WindowInfo, f
 }
 
 func (hm *HotkeyManager) handleCycle(binding *Binding, wins []WindowInfo, foreground uintptr) {
-	state := hm.cycleState[binding.ExeName]
+	state := hm.cycleState[binding.Name]
 
 	// Find the index of the foreground window in our list
 	foregroundIdx := -1
@@ -192,7 +189,7 @@ func (hm *HotkeyManager) handleCycle(binding *Binding, wins []WindowInfo, foregr
 	}
 
 	target := wins[targetIdx]
-	hm.cycleState[binding.ExeName] = cycleInfo{lastHWND: target.HWND}
+	hm.cycleState[binding.Name] = cycleInfo{lastHWND: target.HWND}
 
 	if err := FocusWindow(target.HWND); err != nil {
 		log.Printf("Failed to focus %s (cycle): %v", binding.Name, err)
@@ -321,23 +318,3 @@ var namedKeys = map[string]uint32{
 	"NUMPAD8":   0x68, "NUMPAD9": 0x69,
 }
 
-// vkToModString maps virtual key codes to modifier strings (for hotkey recording).
-var vkToModString = map[uint32]string{
-	0xA0: "shift", 0xA1: "shift", // VK_LSHIFT, VK_RSHIFT
-	0xA2: "ctrl", 0xA3: "ctrl",   // VK_LCONTROL, VK_RCONTROL
-	0xA4: "alt", 0xA5: "alt",     // VK_LMENU, VK_RMENU
-	0x5B: "win", 0x5C: "win",     // VK_LWIN, VK_RWIN
-}
-
-// IsModifierVK returns true if the virtual key code is a modifier key.
-func IsModifierVK(vk uint32) bool {
-	_, ok := vkToModString[vk]
-	return ok
-}
-
-// RegisterWindowMessage registers a custom window message.
-func RegisterWindowMessageW(name string) uint32 {
-	ptr, _ := windows.UTF16PtrFromString(name)
-	ret, _, _ := procRegisterWindowMsg.Call(uintptr(unsafe.Pointer(ptr)))
-	return uint32(ret)
-}
