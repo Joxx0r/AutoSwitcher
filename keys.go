@@ -138,6 +138,40 @@ func FormatModifiers(mods uint32) string {
 	return strings.Join(parts, "+")
 }
 
+// VKToModifierBit returns the modifier bitmask for a modifier VK code, or 0 if not a modifier.
+func VKToModifierBit(vk uint32) uint32 {
+	switch vk {
+	case 0xA0, 0xA1, 0x10: // VK_LSHIFT, VK_RSHIFT, VK_SHIFT
+		return modShift
+	case 0xA2, 0xA3, 0x11: // VK_LCONTROL, VK_RCONTROL, VK_CONTROL
+		return modControl
+	case 0xA4, 0xA5, 0x12: // VK_LMENU, VK_RMENU, VK_MENU
+		return modAlt
+	case 0x5B, 0x5C: // VK_LWIN, VK_RWIN
+		return modWin
+	default:
+		return 0
+	}
+}
+
+// ModifierBitsToStrings converts a modifier bitmask to a slice of modifier name strings.
+func ModifierBitsToStrings(bits uint32) []string {
+	var result []string
+	if bits&modWin != 0 {
+		result = append(result, "win")
+	}
+	if bits&modControl != 0 {
+		result = append(result, "ctrl")
+	}
+	if bits&modAlt != 0 {
+		result = append(result, "alt")
+	}
+	if bits&modShift != 0 {
+		result = append(result, "shift")
+	}
+	return result
+}
+
 // IsModifierVK returns true if the given virtual key code is a modifier key.
 func IsModifierVK(vk uint32) bool {
 	switch vk {

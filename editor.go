@@ -3,6 +3,7 @@
 package main
 
 import (
+	"log"
 	"strings"
 
 	"github.com/lxn/walk"
@@ -48,7 +49,7 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 						Text:    "Record",
 						MaxSize: decl.Size{Width: 80},
 						OnClicked: func() {
-							mods, key, ok := recordHotkeyManual(dlg)
+							mods, key, ok := recordHotkeyByKeypress(dlg)
 							if ok {
 								capturedMods = mods
 								capturedKey = key
@@ -157,6 +158,125 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 	}.Run(owner)
 
 	return accepted
+}
+
+// recordHotkeyByKeypress captures a hotkey by listening for actual key presses.
+// Uses a temporary low-level keyboard hook to intercept all keys including Win+X combos.
+func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok bool) {
+	var dlg *walk.Dialog
+	var statusLabel *walk.Label
+
+	var heldModifiers uint32
+	var capturedKey uint32
+	var done bool
+
+	updateLabel := func() {
+		text := FormatModifiers(heldModifiers)
+		if text != "" {
+			text += "+..."
+		} else {
+			text = "Press your hotkey combination..."
+		}
+		statusLabel.SetText(text)
+	}
+
+	hookCB := func(vkCode uint32, isKeyDown bool) bool {
+		if done {
+			return true
+		}
+
+		if isKeyDown {
+			// Check if it's a modifier key
+			if modBit := VKToModifierBit(vkCode); modBit != 0 {
+				heldModifiers |= modBit
+				updateLabel()
+				return true
+			}
+
+			// Escape with no modifiers cancels
+			if vkCode == 0x1B && heldModifiers == 0 {
+				done = true
+				dlg.Cancel()
+				return true
+			}
+
+			// Non-modifier key completes the recording
+			capturedKey = vkCode
+			done = true
+			dlg.Accept()
+			return true
+		}
+
+		// Key up — clear modifier bits
+		if modBit := VKToModifierBit(vkCode); modBit != 0 {
+			heldModifiers &^= modBit
+			updateLabel()
+		}
+		return true
+	}
+
+	if err := installKeyboardHook(hookCB); err != nil {
+		log.Printf("keyboard hook failed, falling back to manual input: %v", err)
+		return recordHotkeyManual(owner)
+	}
+	defer uninstallKeyboardHook()
+
+	_, _ = decl.Dialog{
+		AssignTo: &dlg,
+		Title:    "Record Hotkey",
+		MinSize:  decl.Size{Width: 350, Height: 150},
+		Layout:   decl.VBox{},
+		Children: []decl.Widget{
+			decl.Label{
+				AssignTo:  &statusLabel,
+				Text:      "Press your hotkey combination...",
+				Alignment: decl.AlignHCenterVCenter,
+			},
+			decl.Composite{
+				Layout: decl.HBox{},
+				Children: []decl.Widget{
+					decl.HSpacer{},
+					decl.PushButton{
+						Text: "Type manually...",
+						OnClicked: func() {
+							// Uninstall hook before opening manual dialog
+							uninstallKeyboardHook()
+							mods, k, manualOK := recordHotkeyManual(dlg)
+							if manualOK {
+								modifiers = mods
+								key = k
+								ok = true
+								done = true
+								dlg.Accept()
+							}
+							// If manual was cancelled, re-install hook
+							if !done {
+								if err := installKeyboardHook(hookCB); err != nil {
+									log.Printf("re-install keyboard hook failed: %v", err)
+									dlg.Cancel()
+								}
+							}
+						},
+					},
+					decl.PushButton{
+						Text: "Cancel",
+						OnClicked: func() {
+							done = true
+							dlg.Cancel()
+						},
+					},
+				},
+			},
+		},
+	}.Run(owner)
+
+	if capturedKey != 0 && !ok {
+		modifiers = ModifierBitsToStrings(heldModifiers)
+		key = FormatVK(capturedKey)
+		ok = true
+	}
+
+	return modifiers, key, ok
 }
 
 // recordHotkeyManual provides a text-based hotkey input dialog.

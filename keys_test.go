@@ -124,6 +124,62 @@ func TestFormatModifiers(t *testing.T) {
 	}
 }
 
+func TestVKToModifierBit(t *testing.T) {
+	tests := []struct {
+		vk   uint32
+		want uint32
+	}{
+		{0xA0, modShift},   // VK_LSHIFT
+		{0xA1, modShift},   // VK_RSHIFT
+		{0x10, modShift},   // VK_SHIFT
+		{0xA2, modControl}, // VK_LCONTROL
+		{0xA3, modControl}, // VK_RCONTROL
+		{0x11, modControl}, // VK_CONTROL
+		{0xA4, modAlt},     // VK_LMENU
+		{0xA5, modAlt},     // VK_RMENU
+		{0x12, modAlt},     // VK_MENU
+		{0x5B, modWin},     // VK_LWIN
+		{0x5C, modWin},     // VK_RWIN
+		{0x41, 0},          // A — not a modifier
+		{0x74, 0},          // F5 — not a modifier
+	}
+
+	for _, tt := range tests {
+		got := VKToModifierBit(tt.vk)
+		if got != tt.want {
+			t.Errorf("VKToModifierBit(0x%02X) = 0x%04X, want 0x%04X", tt.vk, got, tt.want)
+		}
+	}
+}
+
+func TestModifierBitsToStrings(t *testing.T) {
+	tests := []struct {
+		bits uint32
+		want []string
+	}{
+		{0, nil},
+		{modWin, []string{"win"}},
+		{modControl, []string{"ctrl"}},
+		{modAlt, []string{"alt"}},
+		{modShift, []string{"shift"}},
+		{modWin | modControl, []string{"win", "ctrl"}},
+		{modWin | modControl | modAlt | modShift, []string{"win", "ctrl", "alt", "shift"}},
+	}
+
+	for _, tt := range tests {
+		got := ModifierBitsToStrings(tt.bits)
+		if len(got) != len(tt.want) {
+			t.Errorf("ModifierBitsToStrings(0x%04X) = %v, want %v", tt.bits, got, tt.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("ModifierBitsToStrings(0x%04X)[%d] = %q, want %q", tt.bits, i, got[i], tt.want[i])
+			}
+		}
+	}
+}
+
 func TestIsModifierVK(t *testing.T) {
 	tests := []struct {
 		vk   uint32
