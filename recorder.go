@@ -39,10 +39,11 @@ func (s *RecorderState) ProcessKeyEvent(vkCode uint32, isKeyDown bool) RecorderA
 			return RecorderUpdateLabel
 		}
 
-		// Resync modifier state from actual keyboard before any non-modifier
-		// key decision. This prevents stale modifiers when the dialog lost
-		// and regained focus (e.g., Escape should still cancel even if
-		// HeldModifiers was stale from a prior focus loss).
+		// Resync modifier state from actual keyboard state. This handles the
+		// case where the dialog lost and regained focus while a modifier was
+		// released. GetAsyncKeyState reflects the true keyboard state at this
+		// point because we're processing a NEW key-down event (not a stale one
+		// from the hook queue).
 		if s.ResyncModifiers != nil {
 			s.HeldModifiers = s.ResyncModifiers()
 		}

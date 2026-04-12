@@ -249,6 +249,9 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 		switch action {
 		case RecorderUpdateLabel:
 			dlg.Synchronize(func() { updateLabel() })
+			// Don't suppress modifier keys — let the OS process them so
+			// GetAsyncKeyState stays accurate for the resync check
+			return false
 		case RecorderCancel:
 			dlg.Synchronize(func() { dlg.Cancel() })
 		case RecorderAccept:
@@ -322,7 +325,10 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 		return recordHotkeyManual(owner)
 	}
 
-	if state.CapturedKey != 0 && !ok {
+	log.Printf("recordHotkeyByKeypress: hookInstalled=%v CapturedKey=0x%X CapturedMods=0x%X Done=%v",
+		hookInstalled, state.CapturedKey, state.CapturedMods, state.Done)
+
+	if state.CapturedKey != 0 {
 		modifiers = ModifierBitsToStrings(state.CapturedMods)
 		key = FormatVK(state.CapturedKey)
 		ok = true

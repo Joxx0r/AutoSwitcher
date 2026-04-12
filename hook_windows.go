@@ -12,7 +12,9 @@ import (
 const (
 	whKeyboardLL = 13
 	wmKeyDown    = 0x0100
+	wmKeyUp      = 0x0101
 	wmSysKeyDown = 0x0104
+	wmSysKeyUp   = 0x0105
 )
 
 var (
@@ -60,6 +62,12 @@ func lowLevelKeyboardProc(nCode int32, wParam uintptr, lParam uintptr) uintptr {
 		var vkCode uint32
 		readHookVK(lParam, &vkCode)
 		isDown := wParam == wmKeyDown || wParam == wmSysKeyDown
+		isUp := wParam == wmKeyUp || wParam == wmSysKeyUp
+		if !isDown && !isUp {
+			// Not a key event we care about — pass through
+			ret, _, _ := procCallNextHookEx.Call(hookState.handle, uintptr(nCode), wParam, lParam)
+			return ret
+		}
 		if hookState.callback(vkCode, isDown) {
 			return 1 // suppress the key
 		}
