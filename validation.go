@@ -7,6 +7,7 @@ import (
 
 var validModifiers = map[string]bool{
 	"win": true, "ctrl": true, "alt": true, "shift": true,
+	"control": true, "super": true, // aliases accepted by ParseModifiers
 }
 
 // ValidateBinding validates that a Binding has all required fields and valid values.
