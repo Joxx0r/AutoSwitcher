@@ -3,8 +3,6 @@
 package main
 
 import (
-	"sort"
-
 	"github.com/lxn/walk"
 	decl "github.com/lxn/walk/declarative"
 )
@@ -67,29 +65,6 @@ func (m *BindingModel) Value(row, col int) interface{} {
 	return ""
 }
 
-// Sort interface for walk.SortedModel (optional, enables column sorting)
-func (m *BindingModel) Sort(col int, order walk.SortOrder) error {
-	sort.SliceStable(m.rows, func(i, j int) bool {
-		var less bool
-		switch col {
-		case 0:
-			less = m.rows[i].Name < m.rows[j].Name
-		case 1:
-			less = m.rows[i].Hotkey < m.rows[j].Hotkey
-		case 2:
-			less = m.rows[i].ExeName < m.rows[j].ExeName
-		case 3:
-			less = m.rows[i].MultiWindow < m.rows[j].MultiWindow
-		}
-		if order == walk.SortDescending {
-			return !less
-		}
-		return less
-	})
-	m.PublishRowsReset()
-	return nil
-}
-
 // ShowSettingsWindow displays the settings dialog with binding management.
 func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Binding), onCreated func(hwnd uintptr)) {
 	working := make([]Binding, len(bindings))
@@ -119,7 +94,6 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 			decl.TableView{
 				AssignTo:         &tv,
 				AlternatingRowBG: true,
-				ColumnsOrderable: true,
 				Model:            model,
 				Columns: []decl.TableViewColumn{
 					{Title: "Name", Width: 120},
