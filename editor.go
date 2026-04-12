@@ -3,6 +3,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/lxn/walk"
@@ -91,6 +92,10 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 							dlgFile.Filter = "Executables (*.exe)|*.exe|All Files (*.*)|*.*"
 							if ok, _ := dlgFile.ShowOpen(dlg); ok {
 								_ = launchLE.SetText(dlgFile.FilePath)
+								// Auto-fill exe name from launch command if empty
+								if exeLE.Text() == "" {
+									_ = exeLE.SetText(filepath.Base(dlgFile.FilePath))
+								}
 							}
 						},
 					},

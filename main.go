@@ -24,19 +24,14 @@ var (
 	procRegisterWindowMsg = user32.NewProc("RegisterWindowMessageW")
 	procFindWindow        = user32.NewProc("FindWindowW")
 
-	// Custom registered messages for IPC.
+	// Custom registered message for second-instance IPC.
 	wmShowSettings uint32
-	wmShutdown     uint32
 )
 
 func init() {
 	msg, _ := windows.UTF16PtrFromString("AutoSwitcher_ShowSettings")
 	ret, _, _ := procRegisterWindowMsg.Call(uintptr(unsafe.Pointer(msg)))
 	wmShowSettings = uint32(ret)
-
-	msg2, _ := windows.UTF16PtrFromString("AutoSwitcher_Shutdown")
-	ret2, _, _ := procRegisterWindowMsg.Call(uintptr(unsafe.Pointer(msg2)))
-	wmShutdown = uint32(ret2)
 }
 
 func main() {

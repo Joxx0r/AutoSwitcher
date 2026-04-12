@@ -91,7 +91,7 @@ func findWindowsByExeImpl(exeName string) ([]WindowInfo, error) {
 		}
 
 		exePath := filepath.Base(fullPath)
-		if strings.EqualFold(exePath, exeName) {
+		if matchExeName(exePath, exeName) {
 			results = append(results, WindowInfo{
 				HWND:    hwnd,
 				PID:     pid,
@@ -108,6 +108,38 @@ func findWindowsByExeImpl(exeName string) ([]WindowInfo, error) {
 	}
 
 	return results, nil
+}
+
+// matchExeName checks if a process exe name matches the user-provided pattern.
+// Supports: exact match ("notepad.exe"), without extension ("notepad"),
+// and prefix match ("wez" matches "wezterm-gui.exe").
+func matchExeName(processExe, pattern string) bool {
+	processExe = strings.ToLower(processExe)
+	pattern = strings.ToLower(strings.TrimSpace(pattern))
+
+	if pattern == "" {
+		return false
+	}
+
+	// Exact match (case-insensitive)
+	if processExe == pattern {
+		return true
+	}
+
+	// Match without .exe extension: "notepad" matches "notepad.exe"
+	if !strings.HasSuffix(pattern, ".exe") {
+		if processExe == pattern+".exe" {
+			return true
+		}
+	}
+
+	// Prefix match: "wez" matches "wezterm-gui.exe"
+	nameWithoutExt := strings.TrimSuffix(processExe, ".exe")
+	if strings.HasPrefix(nameWithoutExt, pattern) {
+		return true
+	}
+
+	return false
 }
 
 // getProcessExePath returns the full executable path for the given PID, or "" on failure.
@@ -180,10 +212,7 @@ func FocusWindowImpl(hwnd uintptr) error {
 	return fmt.Errorf("failed to bring window to foreground")
 }
 
-// GetForegroundHWND returns the handle of the currently focused window.
-func GetForegroundHWND() uintptr { return getForegroundHWND() }
-
-// GetForegroundHWNDImpl is the real implementation of GetForegroundHWND.
+// GetForegroundHWNDImpl returns the handle of the currently focused window.
 func GetForegroundHWNDImpl() uintptr {
 	hwnd, _, _ := procGetForegroundWindow.Call()
 	return hwnd
