@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -41,14 +42,18 @@ func main() {
 	mutexNamePtr, _ := windows.UTF16PtrFromString(mutexName)
 	handle, err := windows.CreateMutex(nil, false, mutexNamePtr)
 	if err == windows.ERROR_ALREADY_EXISTS {
-		// Another instance is running — tell it to show settings
+		// Another instance is running — shut it down and take over
 		if handle != 0 {
 			_ = windows.CloseHandle(handle)
 		}
-		notifyExistingInstance()
-		return
+		shutdownExistingInstance()
+		// Retry acquiring the mutex after the old instance exits
+		handle, err = windows.CreateMutex(nil, false, mutexNamePtr)
+		if err != nil && err != windows.ERROR_ALREADY_EXISTS {
+			log.Printf("WARNING: CreateMutex retry failed: %v", err)
+		}
 	}
-	if err != nil {
+	if err != nil && err != windows.ERROR_ALREADY_EXISTS {
 		log.Printf("WARNING: CreateMutex failed: %v — running without single-instance protection", err)
 	}
 	_ = handle // keep handle alive for process lifetime
@@ -76,14 +81,29 @@ func main() {
 	}
 }
 
-func notifyExistingInstance() {
-	// Find the hidden window of the running instance by its window title
-	// FindWindowW(lpClassName, lpWindowName) — pass nil class, match by title
+const wmClose = 0x0010
+
+func shutdownExistingInstance() {
 	windowTitle, _ := windows.UTF16PtrFromString("AutoSwitcher_HiddenWindow")
 	hwnd, _, _ := procFindWindow.Call(0, uintptr(unsafe.Pointer(windowTitle)))
-	if hwnd != 0 {
-		_, _, _ = procPostMessage.Call(hwnd, uintptr(wmShowSettings), 0, 0)
+	if hwnd == 0 {
+		// No window found — old instance may have already exited
+		time.Sleep(500 * time.Millisecond)
+		return
 	}
+
+	// Send WM_CLOSE to the old instance's hidden window
+	_, _, _ = procPostMessage.Call(hwnd, wmClose, 0, 0)
+
+	// Wait for the old instance to exit (poll for up to 5 seconds)
+	for i := 0; i < 50; i++ {
+		time.Sleep(100 * time.Millisecond)
+		hwnd, _, _ = procFindWindow.Call(0, uintptr(unsafe.Pointer(windowTitle)))
+		if hwnd == 0 {
+			return
+		}
+	}
+	log.Println("WARNING: old instance did not exit in time")
 }
 
 func setupLogging() {
