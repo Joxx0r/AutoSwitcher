@@ -97,6 +97,23 @@ func TestValidateModifiers_Invalid(t *testing.T) {
 	}
 }
 
+func TestValidateBinding_ModifierAliases(t *testing.T) {
+	b := &Binding{
+		Name:    "Test",
+		ExeName: "test.exe",
+		Hotkey:  HotkeyDef{Modifiers: []string{"control", "super"}, Key: "A"},
+	}
+	if err := ValidateBinding(b); err != nil {
+		t.Errorf("expected aliases 'control'/'super' to be accepted, got: %v", err)
+	}
+}
+
+func TestValidateModifiers_Aliases(t *testing.T) {
+	if err := ValidateModifiers("control, super"); err != nil {
+		t.Errorf("expected aliases to be accepted, got: %v", err)
+	}
+}
+
 func TestValidateModifiers_Empty(t *testing.T) {
 	if err := ValidateModifiers(""); err != nil {
 		t.Errorf("expected no error for empty string, got: %v", err)
