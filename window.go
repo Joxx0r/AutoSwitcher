@@ -211,10 +211,7 @@ func FocusWindowImpl(hwnd uintptr) error {
 	return fmt.Errorf("failed to bring window to foreground")
 }
 
-// GetForegroundHWND returns the handle of the currently focused window.
-func GetForegroundHWND() uintptr { return getForegroundHWND() }
-
-// GetForegroundHWNDImpl is the real implementation of GetForegroundHWND.
+// GetForegroundHWNDImpl returns the handle of the currently focused window.
 func GetForegroundHWNDImpl() uintptr {
 	hwnd, _, _ := procGetForegroundWindow.Call()
 	return hwnd
