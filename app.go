@@ -85,10 +85,15 @@ func (a *App) Run() error {
 	a.hotkeys = NewHotkeyManager(uintptr(a.mw.Handle()), a.tray.ShowBalloon)
 	a.hotkeys.RegisterAll(a.config.Bindings)
 
-	// Reconcile autostart: sync scheduled task with config
-	if a.config.Autostart && !IsAutostartEnabled() {
+	// Reconcile autostart: make config authoritative over Task Scheduler state
+	taskExists := IsAutostartEnabled()
+	if a.config.Autostart && !taskExists {
 		if err := SetAutostart(true); err != nil {
 			log.Printf("Failed to restore autostart: %v", err)
+		}
+	} else if !a.config.Autostart && taskExists {
+		if err := SetAutostart(false); err != nil {
+			log.Printf("Failed to remove stale autostart task: %v", err)
 		}
 	}
 

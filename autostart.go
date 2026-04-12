@@ -8,7 +8,7 @@ import (
 	"os/exec"
 )
 
-const taskName = "AutoSwitcher"
+const taskName = `AutoSwitcher\Startup`
 
 // IsAutostartEnabled checks if the AutoSwitcher scheduled task exists.
 func IsAutostartEnabled() bool {
