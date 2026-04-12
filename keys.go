@@ -100,8 +100,22 @@ func ParseModifiers(mods []string) uint32 {
 	return result
 }
 
+// canonicalNames maps VK codes to their preferred display name when multiple
+// aliases exist (e.g., ENTER vs RETURN). This ensures deterministic output
+// regardless of Go map iteration order.
+var canonicalNames = map[uint32]string{
+	0x0D: "ENTER",
+	0x1B: "ESCAPE",
+	0x2E: "DELETE",
+	0x2D: "INSERT",
+}
+
 // FormatVK returns a human-readable name for a virtual key code.
 func FormatVK(vk uint32) string {
+	// Check canonical names first for deterministic output with aliased keys
+	if name, ok := canonicalNames[vk]; ok {
+		return name
+	}
 	for name, code := range functionKeys {
 		if code == vk {
 			return name
@@ -137,6 +151,65 @@ func FormatModifiers(mods uint32) string {
 		parts = append(parts, "Shift")
 	}
 	return strings.Join(parts, "+")
+}
+
+// IsSupportedVK returns true if the given virtual key code is in our supported vocabulary
+// (i.e., it can round-trip through FormatVK → ParseKey without producing a hex fallback).
+func IsSupportedVK(vk uint32) bool {
+	// A-Z
+	if vk >= 0x41 && vk <= 0x5A {
+		return true
+	}
+	// 0-9
+	if vk >= 0x30 && vk <= 0x39 {
+		return true
+	}
+	// Function keys and named keys
+	for _, code := range functionKeys {
+		if code == vk {
+			return true
+		}
+	}
+	for _, code := range namedKeys {
+		if code == vk {
+			return true
+		}
+	}
+	return false
+}
+
+// VKToModifierBit returns the modifier bitmask for a modifier VK code, or 0 if not a modifier.
+func VKToModifierBit(vk uint32) uint32 {
+	switch vk {
+	case 0xA0, 0xA1, 0x10: // VK_LSHIFT, VK_RSHIFT, VK_SHIFT
+		return modShift
+	case 0xA2, 0xA3, 0x11: // VK_LCONTROL, VK_RCONTROL, VK_CONTROL
+		return modControl
+	case 0xA4, 0xA5, 0x12: // VK_LMENU, VK_RMENU, VK_MENU
+		return modAlt
+	case 0x5B, 0x5C: // VK_LWIN, VK_RWIN
+		return modWin
+	default:
+		return 0
+	}
+}
+
+// ModifierBitsToStrings converts a modifier bitmask to a slice of modifier name strings.
+func ModifierBitsToStrings(bits uint32) []string {
+	var result []string
+	if bits&modWin != 0 {
+		result = append(result, "win")
+	}
+	if bits&modControl != 0 {
+		result = append(result, "ctrl")
+	}
+	if bits&modAlt != 0 {
+		result = append(result, "alt")
+	}
+	if bits&modShift != 0 {
+		result = append(result, "shift")
+	}
+	return result
 }
 
 // IsModifierVK returns true if the given virtual key code is a modifier key.

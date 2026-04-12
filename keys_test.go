@@ -124,6 +124,135 @@ func TestFormatModifiers(t *testing.T) {
 	}
 }
 
+func TestFormatVKCanonicalAliases(t *testing.T) {
+	// Keys with aliases must always produce the canonical (preferred) name
+	tests := []struct {
+		vk   uint32
+		want string
+	}{
+		{0x0D, "ENTER"},  // not RETURN
+		{0x1B, "ESCAPE"}, // not ESC
+		{0x2E, "DELETE"}, // not DEL
+		{0x2D, "INSERT"}, // not INS
+	}
+
+	for _, tt := range tests {
+		got := FormatVK(tt.vk)
+		if got != tt.want {
+			t.Errorf("FormatVK(0x%02X) = %q, want canonical %q", tt.vk, got, tt.want)
+		}
+	}
+}
+
+func TestIsSupportedVK(t *testing.T) {
+	tests := []struct {
+		vk   uint32
+		want bool
+	}{
+		{0x41, true},  // A
+		{0x5A, true},  // Z
+		{0x30, true},  // 0
+		{0x39, true},  // 9
+		{0x70, true},  // F1
+		{0x87, true},  // F24
+		{0x20, true},  // SPACE
+		{0x0D, true},  // ENTER
+		{0x1B, true},  // ESCAPE
+		{0x09, true},  // TAB
+		{0x26, true},  // UP arrow
+		{0x60, true},  // NUMPAD0
+		{0xBA, false}, // OEM_1 (semicolon) — not in our vocabulary
+		{0xBB, false}, // OEM_PLUS — not in our vocabulary
+		{0x01, false}, // VK_LBUTTON — not supported
+		{0xA0, false}, // VK_LSHIFT — modifier, not a target key
+	}
+
+	for _, tt := range tests {
+		got := IsSupportedVK(tt.vk)
+		if got != tt.want {
+			t.Errorf("IsSupportedVK(0x%02X) = %v, want %v", tt.vk, got, tt.want)
+		}
+	}
+}
+
+func TestSupportedVKRoundTrip(t *testing.T) {
+	// Every supported VK should produce a name that ParseKey can resolve back
+	testVKs := []uint32{
+		0x41, 0x5A, 0x30, 0x39, // A, Z, 0, 9
+		0x70, 0x7B, 0x87,       // F1, F12, F24
+		0x20, 0x0D, 0x1B, 0x09, // SPACE, ENTER, ESCAPE, TAB
+		0x26, 0x28, 0x25, 0x27, // arrows
+		0x60, 0x69,             // NUMPAD0, NUMPAD9
+	}
+	for _, vk := range testVKs {
+		name := FormatVK(vk)
+		parsed, err := ParseKey(name)
+		if err != nil {
+			t.Errorf("FormatVK(0x%02X) = %q, but ParseKey returned error: %v", vk, name, err)
+			continue
+		}
+		if parsed != vk {
+			t.Errorf("Round-trip failed: VK 0x%02X → %q → 0x%02X", vk, name, parsed)
+		}
+	}
+}
+
+func TestVKToModifierBit(t *testing.T) {
+	tests := []struct {
+		vk   uint32
+		want uint32
+	}{
+		{0xA0, modShift},   // VK_LSHIFT
+		{0xA1, modShift},   // VK_RSHIFT
+		{0x10, modShift},   // VK_SHIFT
+		{0xA2, modControl}, // VK_LCONTROL
+		{0xA3, modControl}, // VK_RCONTROL
+		{0x11, modControl}, // VK_CONTROL
+		{0xA4, modAlt},     // VK_LMENU
+		{0xA5, modAlt},     // VK_RMENU
+		{0x12, modAlt},     // VK_MENU
+		{0x5B, modWin},     // VK_LWIN
+		{0x5C, modWin},     // VK_RWIN
+		{0x41, 0},          // A — not a modifier
+		{0x74, 0},          // F5 — not a modifier
+	}
+
+	for _, tt := range tests {
+		got := VKToModifierBit(tt.vk)
+		if got != tt.want {
+			t.Errorf("VKToModifierBit(0x%02X) = 0x%04X, want 0x%04X", tt.vk, got, tt.want)
+		}
+	}
+}
+
+func TestModifierBitsToStrings(t *testing.T) {
+	tests := []struct {
+		bits uint32
+		want []string
+	}{
+		{0, nil},
+		{modWin, []string{"win"}},
+		{modControl, []string{"ctrl"}},
+		{modAlt, []string{"alt"}},
+		{modShift, []string{"shift"}},
+		{modWin | modControl, []string{"win", "ctrl"}},
+		{modWin | modControl | modAlt | modShift, []string{"win", "ctrl", "alt", "shift"}},
+	}
+
+	for _, tt := range tests {
+		got := ModifierBitsToStrings(tt.bits)
+		if len(got) != len(tt.want) {
+			t.Errorf("ModifierBitsToStrings(0x%04X) = %v, want %v", tt.bits, got, tt.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("ModifierBitsToStrings(0x%04X)[%d] = %q, want %q", tt.bits, i, got[i], tt.want[i])
+			}
+		}
+	}
+}
+
 func TestIsModifierVK(t *testing.T) {
 	tests := []struct {
 		vk   uint32

@@ -168,3 +168,44 @@ func TestValidateModifiers_Empty(t *testing.T) {
 		t.Errorf("expected no error for empty string, got: %v", err)
 	}
 }
+
+func TestValidateHotkeyRules_BareNonFunctionKey(t *testing.T) {
+	err := ValidateHotkeyRules("A", nil)
+	if err == nil {
+		t.Error("expected error for bare A without modifiers")
+	}
+}
+
+func TestValidateHotkeyRules_BareDigitKey(t *testing.T) {
+	err := ValidateHotkeyRules("1", []string{})
+	if err == nil {
+		t.Error("expected error for bare 1 without modifiers")
+	}
+}
+
+func TestValidateHotkeyRules_FunctionKeyWithoutModifier(t *testing.T) {
+	err := ValidateHotkeyRules("F5", nil)
+	if err != nil {
+		t.Errorf("expected no error for bare F5, got: %v", err)
+	}
+}
+
+func TestValidateHotkeyRules_KeyWithModifier(t *testing.T) {
+	err := ValidateHotkeyRules("A", []string{"ctrl"})
+	if err != nil {
+		t.Errorf("expected no error for Ctrl+A, got: %v", err)
+	}
+}
+
+func TestValidateBinding_LegacyBareKey(t *testing.T) {
+	// Legacy configs with bare non-function keys should still pass ValidateBinding
+	// (the stricter rule is enforced at input time, not save time)
+	b := &Binding{
+		Name:    "Test",
+		ExeName: "test.exe",
+		Hotkey:  HotkeyDef{Modifiers: nil, Key: "A"},
+	}
+	if err := ValidateBinding(b); err != nil {
+		t.Errorf("expected legacy bare A to pass ValidateBinding, got: %v", err)
+	}
+}
