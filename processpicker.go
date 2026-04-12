@@ -10,16 +10,14 @@ import (
 // ProcessPickerModel implements walk.TableModel for the process picker dialog.
 type ProcessPickerModel struct {
 	walk.TableModelBase
-	all      []ProcessInfo // deduplicated full list
-	filtered []ProcessInfo // after search filter
+	raw      []ProcessInfo // full unfiltered list (with duplicates)
+	filtered []ProcessInfo // after filter + dedup
 }
 
 func NewProcessPickerModel(procs []ProcessInfo) *ProcessPickerModel {
-	deduped := deduplicateProcesses(procs)
-	return &ProcessPickerModel{
-		all:      deduped,
-		filtered: deduped,
-	}
+	m := &ProcessPickerModel{raw: procs}
+	m.filtered = deduplicateProcesses(procs)
+	return m
 }
 
 func (m *ProcessPickerModel) RowCount() int {
@@ -43,7 +41,8 @@ func (m *ProcessPickerModel) Value(row, col int) interface{} {
 }
 
 func (m *ProcessPickerModel) ApplyFilter(query string) {
-	m.filtered = filterProcesses(m.all, query)
+	// Filter on full set first (preserves all window titles), then deduplicate
+	m.filtered = deduplicateProcesses(filterProcesses(m.raw, query))
 	m.PublishRowsReset()
 }
 

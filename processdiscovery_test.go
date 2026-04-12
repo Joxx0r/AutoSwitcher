@@ -1,8 +1,44 @@
+//go:build windows
+
 package main
 
 import (
 	"testing"
 )
+
+func TestDeduplicateProcesses_DifferentPathsSameExe(t *testing.T) {
+	procs := []ProcessInfo{
+		{ExeName: "python.exe", ExePath: `C:\Python39\python.exe`, Title: "Python 3.9", PID: 100},
+		{ExeName: "python.exe", ExePath: `C:\Python311\python.exe`, Title: "Python 3.11", PID: 200},
+	}
+
+	result := deduplicateProcesses(procs)
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 entries for different paths, got %d", len(result))
+	}
+}
+
+func TestFilterThenDedup_PreservesNonRepresentativeTitles(t *testing.T) {
+	// Chrome has windows "Docs" and "Mail". Dedup alone would keep only one title.
+	// Filtering by "Mail" on the full set first should still find chrome.
+	procs := []ProcessInfo{
+		{ExeName: "chrome.exe", ExePath: `C:\Chrome\chrome.exe`, Title: "Docs", PID: 100},
+		{ExeName: "chrome.exe", ExePath: `C:\Chrome\chrome.exe`, Title: "Mail", PID: 101},
+		{ExeName: "notepad.exe", ExePath: `C:\Windows\notepad.exe`, Title: "Untitled", PID: 200},
+	}
+
+	// Filter first, then dedup (the picker's actual flow)
+	filtered := filterProcesses(procs, "Mail")
+	result := deduplicateProcesses(filtered)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 entry matching 'Mail', got %d", len(result))
+	}
+	if result[0].ExeName != "chrome.exe" {
+		t.Errorf("expected chrome.exe, got %s", result[0].ExeName)
+	}
+}
 
 func TestDeduplicateProcesses_GroupsByExeName(t *testing.T) {
 	procs := []ProcessInfo{

@@ -90,11 +90,11 @@ func getWindowText(hwnd uintptr) string {
 		return ""
 	}
 	buf := make([]uint16, titleLen+1)
-	procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), titleLen+1)
+	_, _, _ = procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), titleLen+1)
 	return windows.UTF16ToString(buf)
 }
 
-// deduplicateProcesses groups by exe name (case-insensitive) and keeps
+// deduplicateProcesses groups by full exe path (case-insensitive) and keeps
 // the entry with the longest window title as representative.
 func deduplicateProcesses(procs []ProcessInfo) []ProcessInfo {
 	type entry struct {
@@ -104,7 +104,7 @@ func deduplicateProcesses(procs []ProcessInfo) []ProcessInfo {
 	seen := make(map[string]*entry)
 
 	for _, p := range procs {
-		key := strings.ToLower(p.ExeName)
+		key := strings.ToLower(p.ExePath)
 		if e, ok := seen[key]; !ok {
 			seen[key] = &entry{proc: p, titleLen: len(p.Title)}
 		} else if len(p.Title) > e.titleLen {
