@@ -6,16 +6,45 @@ import (
 	"testing"
 )
 
-func TestDeduplicateProcesses_DifferentPathsSameExe(t *testing.T) {
+func TestDeduplicateProcesses_SameBasenameMerges(t *testing.T) {
+	// Runtime matching is basename-only, so different paths with same exe name
+	// should deduplicate to a single entry.
 	procs := []ProcessInfo{
 		{ExeName: "python.exe", ExePath: `C:\Python39\python.exe`, Title: "Python 3.9", PID: 100},
-		{ExeName: "python.exe", ExePath: `C:\Python311\python.exe`, Title: "Python 3.11", PID: 200},
+		{ExeName: "python.exe", ExePath: `C:\Python311\python.exe`, Title: "Python 3.11 Shell", PID: 200},
 	}
 
 	result := deduplicateProcesses(procs)
 
-	if len(result) != 2 {
-		t.Fatalf("expected 2 entries for different paths, got %d", len(result))
+	if len(result) != 1 {
+		t.Fatalf("expected 1 entry (basename dedup), got %d", len(result))
+	}
+	// Should keep the longer title
+	if result[0].Title != "Python 3.11 Shell" {
+		t.Errorf("expected longest title as representative, got %q", result[0].Title)
+	}
+}
+
+func TestFilterProcesses_ByPath(t *testing.T) {
+	procs := []ProcessInfo{
+		{ExeName: "python.exe", ExePath: `C:\Python39\python.exe`, Title: "Python"},
+		{ExeName: "notepad.exe", ExePath: `C:\Windows\notepad.exe`, Title: "Untitled"},
+	}
+
+	result := filterProcesses(procs, "Python39")
+	if len(result) != 1 || result[0].ExeName != "python.exe" {
+		t.Errorf("expected python.exe matched by path, got %v", result)
+	}
+}
+
+func TestFilterProcesses_TrimmedQuery(t *testing.T) {
+	procs := []ProcessInfo{
+		{ExeName: "chrome.exe", Title: "Google"},
+	}
+
+	result := filterProcesses(procs, "  chrome  ")
+	if len(result) != 1 {
+		t.Errorf("expected trimmed query to match, got %d results", len(result))
 	}
 }
 

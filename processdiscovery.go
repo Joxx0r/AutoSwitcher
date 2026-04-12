@@ -94,8 +94,9 @@ func getWindowText(hwnd uintptr) string {
 	return windows.UTF16ToString(buf)
 }
 
-// deduplicateProcesses groups by full exe path (case-insensitive) and keeps
-// the entry with the longest window title as representative.
+// deduplicateProcesses groups by exe basename (case-insensitive), matching
+// how runtime hotkey resolution identifies processes. Keeps the entry with
+// the longest window title as representative.
 func deduplicateProcesses(procs []ProcessInfo) []ProcessInfo {
 	type entry struct {
 		proc     ProcessInfo
@@ -104,7 +105,7 @@ func deduplicateProcesses(procs []ProcessInfo) []ProcessInfo {
 	seen := make(map[string]*entry)
 
 	for _, p := range procs {
-		key := strings.ToLower(p.ExePath)
+		key := strings.ToLower(p.ExeName)
 		if e, ok := seen[key]; !ok {
 			seen[key] = &entry{proc: p, titleLen: len(p.Title)}
 		} else if len(p.Title) > e.titleLen {
@@ -118,14 +119,19 @@ func deduplicateProcesses(procs []ProcessInfo) []ProcessInfo {
 		result = append(result, e.proc)
 	}
 	sort.Slice(result, func(i, j int) bool {
-		return strings.ToLower(result[i].ExeName) < strings.ToLower(result[j].ExeName)
+		a, b := strings.ToLower(result[i].ExeName), strings.ToLower(result[j].ExeName)
+		if a != b {
+			return a < b
+		}
+		return strings.ToLower(result[i].ExePath) < strings.ToLower(result[j].ExePath)
 	})
 	return result
 }
 
-// filterProcesses returns processes whose exe name or title contains the query (case-insensitive).
+// filterProcesses returns processes whose exe name, title, or path contains the query (case-insensitive).
 // An empty query returns all processes.
 func filterProcesses(procs []ProcessInfo, query string) []ProcessInfo {
+	query = strings.TrimSpace(query)
 	if query == "" {
 		return procs
 	}
@@ -133,7 +139,8 @@ func filterProcesses(procs []ProcessInfo, query string) []ProcessInfo {
 	var result []ProcessInfo
 	for _, p := range procs {
 		if strings.Contains(strings.ToLower(p.ExeName), q) ||
-			strings.Contains(strings.ToLower(p.Title), q) {
+			strings.Contains(strings.ToLower(p.Title), q) ||
+			strings.Contains(strings.ToLower(p.ExePath), q) {
 			result = append(result, p)
 		}
 	}
