@@ -175,7 +175,11 @@ func recordHotkeyManual(owner walk.Form) (modifiers []string, key string, ok boo
 	var modsLE *walk.LineEdit
 	var keyLE *walk.LineEdit
 
-	result, _ := decl.Dialog{
+	// Capture values before dialog closes — Walk disposes widgets after .Run() returns
+	var capturedModsText string
+	var capturedKeyText string
+
+	_, _ = decl.Dialog{
 		AssignTo: &dlg,
 		Title:    "Enter Hotkey",
 		MinSize:  decl.Size{Width: 350, Height: 180},
@@ -209,11 +213,13 @@ func recordHotkeyManual(owner walk.Form) (modifiers []string, key string, ok boo
 								walk.MsgBox(dlg, "Validation", "Invalid key: "+err.Error(), walk.MsgBoxIconWarning)
 								return
 							}
-							// Validate modifiers
 							if err := validateModifiers(modsLE.Text()); err != nil {
 								walk.MsgBox(dlg, "Validation", err.Error(), walk.MsgBoxIconWarning)
 								return
 							}
+							// Capture values while widgets are still alive
+							capturedModsText = modsLE.Text()
+							capturedKeyText = keyLE.Text()
 							dlg.Accept()
 						},
 					},
@@ -226,11 +232,11 @@ func recordHotkeyManual(owner walk.Form) (modifiers []string, key string, ok boo
 		},
 	}.Run(owner)
 
-	if result != walk.DlgCmdOK {
+	if capturedKeyText == "" {
 		return nil, "", false
 	}
 
-	modParts := strings.Split(modsLE.Text(), ",")
+	modParts := strings.Split(capturedModsText, ",")
 	for _, m := range modParts {
 		m = strings.TrimSpace(strings.ToLower(m))
 		if m != "" && validModifiers[m] {
@@ -238,7 +244,7 @@ func recordHotkeyManual(owner walk.Form) (modifiers []string, key string, ok boo
 		}
 	}
 
-	key = strings.TrimSpace(keyLE.Text())
+	key = strings.TrimSpace(capturedKeyText)
 	return modifiers, key, true
 }
 
