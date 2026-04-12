@@ -178,6 +178,19 @@ func ShowWorkspaceEditor(owner walk.Form, binding *Binding) bool {
 								Text:    "Record",
 								MaxSize: decl.Size{Width: 80},
 								OnClicked: func() {
+									mods, key, ok := recordHotkeyByKeypress(dlg)
+									if ok {
+										capturedMods = mods
+										capturedKey = key
+										hk := HotkeyDef{Modifiers: mods, Key: key}
+										_ = hotkeyLE.SetText(hk.Format())
+									}
+								},
+							},
+							decl.PushButton{
+								Text:    "Edit...",
+								MaxSize: decl.Size{Width: 80},
+								OnClicked: func() {
 									mods, key, ok := recordHotkeyManual(dlg)
 									if ok {
 										capturedMods = mods
