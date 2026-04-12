@@ -79,7 +79,7 @@ func (t *TrayIcon) buildMenu() error {
 	autostartAction := walk.NewAction()
 	autostartAction.SetText("Start with Windows")
 	autostartAction.SetCheckable(true)
-	autostartAction.SetChecked(t.app.config.Autostart)
+	autostartAction.SetChecked(IsAutostartEnabled())
 	autostartAction.Triggered().Attach(func() {
 		checked := autostartAction.Checked()
 		if err := SetAutostart(checked); err != nil {

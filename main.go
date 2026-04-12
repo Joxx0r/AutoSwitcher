@@ -68,9 +68,10 @@ func main() {
 }
 
 func notifyExistingInstance() {
-	// Find the hidden window of the running instance by its class name
-	className, _ := windows.UTF16PtrFromString("AutoSwitcher_HiddenWindow")
-	hwnd, _, _ := procFindWindow.Call(uintptr(unsafe.Pointer(className)), 0)
+	// Find the hidden window of the running instance by its window title
+	// FindWindowW(lpClassName, lpWindowName) — pass nil class, match by title
+	windowTitle, _ := windows.UTF16PtrFromString("AutoSwitcher_HiddenWindow")
+	hwnd, _, _ := procFindWindow.Call(0, uintptr(unsafe.Pointer(windowTitle)))
 	if hwnd != 0 {
 		procPostMessage.Call(hwnd, uintptr(wmShowSettings), 0, 0)
 	}

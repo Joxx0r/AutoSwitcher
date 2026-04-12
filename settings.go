@@ -3,8 +3,6 @@
 package main
 
 import (
-	"sort"
-
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
 )
@@ -149,12 +147,6 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 					PushButton{
 						Text: "Save & Close",
 						OnClicked: func() {
-							// Sort by name for consistency (optional)
-							sorted := make([]Binding, len(working))
-							copy(sorted, working)
-							sort.Slice(sorted, func(i, j int) bool {
-								return sorted[i].Name < sorted[j].Name
-							})
 							onSave(working)
 							dlg.Accept()
 						},

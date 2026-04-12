@@ -121,6 +121,10 @@ func SaveConfig(path string, cfg *Config) error {
 		return fmt.Errorf("writing temp config: %w", err)
 	}
 
+	// On Windows, os.Rename does not overwrite an existing file.
+	// Remove the destination first if it exists.
+	_ = os.Remove(path)
+
 	if err := os.Rename(tmpPath, path); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("renaming config: %w", err)

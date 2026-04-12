@@ -19,7 +19,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install go-winres
-        run: go install github.com/tc-hib/go-winres@latest
+        run: go install github.com/tc-hib/go-winres@v0.3.3
 
       - name: Generate resources
         run: go generate ./...
@@ -62,7 +62,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2
+          version: v2.11.4
 
   vet:
     runs-on: windows-latest

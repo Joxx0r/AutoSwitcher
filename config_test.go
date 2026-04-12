@@ -118,6 +118,38 @@ func TestLoadConfigCorrupt(t *testing.T) {
 	}
 }
 
+func TestSaveConfigOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	// First save
+	cfg1 := DefaultConfig()
+	cfg1.Autostart = false
+	if err := SaveConfig(path, cfg1); err != nil {
+		t.Fatalf("first save: %v", err)
+	}
+
+	// Second save (overwrite) — this must succeed on Windows
+	cfg2 := DefaultConfig()
+	cfg2.Autostart = true
+	cfg2.Bindings = []Binding{{Name: "Test", ExeName: "test.exe"}}
+	if err := SaveConfig(path, cfg2); err != nil {
+		t.Fatalf("second save (overwrite) failed: %v", err)
+	}
+
+	// Verify the overwritten content
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig after overwrite: %v", err)
+	}
+	if !loaded.Autostart {
+		t.Error("expected autostart=true after overwrite")
+	}
+	if len(loaded.Bindings) != 1 {
+		t.Errorf("expected 1 binding after overwrite, got %d", len(loaded.Bindings))
+	}
+}
+
 func TestSaveConfigAtomic(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")

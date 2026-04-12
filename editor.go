@@ -48,7 +48,7 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 						Text:    "Record",
 						MaxSize: Size{Width: 80},
 						OnClicked: func() {
-							mods, key, ok := RecordHotkey(dlg)
+							mods, key, ok := recordHotkeyManual(dlg)
 							if ok {
 								capturedMods = mods
 								capturedKey = key
@@ -83,7 +83,11 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 			},
 
 			Label{Text: "Launch Arguments:"},
-			LineEdit{AssignTo: &argsLE, Text: strings.Join(binding.LaunchArgs, " ")},
+			LineEdit{
+				AssignTo:    &argsLE,
+				Text:        strings.Join(binding.LaunchArgs, "\n"),
+				ToolTipText: "One argument per line. Spaces within an argument are preserved.",
+			},
 
 			Label{Text: "Multi-Window:"},
 			ComboBox{
@@ -121,8 +125,17 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 							}
 							binding.ExeName = exeLE.Text()
 							binding.LaunchCommand = launchLE.Text()
-							if args := strings.TrimSpace(argsLE.Text()); args != "" {
-								binding.LaunchArgs = strings.Fields(args)
+							if argsText := strings.TrimSpace(argsLE.Text()); argsText != "" {
+								// Split by newlines to preserve spaces within arguments
+								lines := strings.Split(argsText, "\n")
+								var args []string
+								for _, line := range lines {
+									line = strings.TrimSpace(line)
+									if line != "" {
+										args = append(args, line)
+									}
+								}
+								binding.LaunchArgs = args
 							} else {
 								binding.LaunchArgs = nil
 							}
@@ -150,52 +163,9 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 	return accepted
 }
 
-// RecordHotkey shows a dialog that captures a hotkey combination.
-// It uses RegisterHotKey temporarily to capture Win+key combos that the shell normally intercepts.
-func RecordHotkey(owner walk.Form) (modifiers []string, key string, ok bool) {
-	var dlg *walk.Dialog
-	var statusLabel *walk.Label
-	var captured bool
-
-	Dialog{
-		AssignTo: &dlg,
-		Title:    "Record Hotkey",
-		MinSize:  Size{Width: 300, Height: 120},
-		Layout:   VBox{},
-		Children: []Widget{
-			Label{
-				AssignTo: &statusLabel,
-				Text:     "Press any key combination...\n(Supports Ctrl, Alt, Shift, Win + key)",
-			},
-			Composite{
-				Layout: HBox{},
-				Children: []Widget{
-					HSpacer{},
-					PushButton{
-						Text: "Cancel",
-						OnClicked: func() {
-							dlg.Cancel()
-						},
-					},
-				},
-			},
-		},
-	}.Run(owner)
-
-	// The actual hotkey capture happens via the dialog's key events.
-	// For Win+key combos, we rely on the user typing the combo while this dialog is focused.
-	// Walk's dialog will receive WM_KEYDOWN for non-Win keys.
-	// For Win key combos, we use a different approach: let the user type the combo description.
-
-	// Simplified approach: show an input dialog instead
-	if !captured {
-		return recordHotkeyManual(owner)
-	}
-
-	return modifiers, key, ok
-}
-
-// recordHotkeyManual provides a text-based hotkey input as a reliable fallback.
+// recordHotkeyManual provides a text-based hotkey input dialog.
+// This is more reliable than trying to capture key events, since the Win key
+// is intercepted by the shell before reaching WM_KEYDOWN in a regular control.
 func recordHotkeyManual(owner walk.Form) (modifiers []string, key string, ok bool) {
 	var dlg *walk.Dialog
 	var modsLE *walk.LineEdit
