@@ -62,7 +62,26 @@ func ShowBindingEditor(owner walk.Form, binding *Binding) bool {
 			},
 
 			decl.Label{Text: "Executable Name:"},
-			decl.LineEdit{AssignTo: &exeLE, Text: binding.ExeName},
+			decl.Composite{
+				Layout: decl.HBox{MarginsZero: true},
+				Children: []decl.Widget{
+					decl.LineEdit{AssignTo: &exeLE, Text: binding.ExeName},
+					decl.PushButton{
+						Text:    "Pick...",
+						MaxSize: decl.Size{Width: 80},
+						OnClicked: func() {
+							if p := ShowProcessPicker(dlg); p != nil {
+								_ = exeLE.SetText(p.ExeName)
+								// Only auto-fill launch command when empty;
+								// preserves custom launchers/scripts the user set.
+								if launchLE.Text() == "" {
+									_ = launchLE.SetText(p.ExePath)
+								}
+							}
+						},
+					},
+				},
+			},
 
 			decl.Label{Text: "Launch Command:"},
 			decl.Composite{
