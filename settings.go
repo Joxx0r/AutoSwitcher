@@ -70,8 +70,10 @@ func (m *BindingModel) Value(row, col int) interface{} {
 // persist the bindings and return a ReloadResult so the dialog can surface
 // any registration or save failures without closing.
 func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Binding) ReloadResult, onCreated func(hwnd uintptr)) {
-	working := make([]Binding, len(bindings))
-	copy(working, bindings)
+	// Deep clone so the dialog can mutate working freely without ever
+	// touching live state — Reload also clones again at commit time, but
+	// being explicit at dialog open makes the isolation guarantee obvious.
+	working := cloneBindings(bindings)
 
 	var dlg *walk.Dialog
 	var tv *walk.TableView

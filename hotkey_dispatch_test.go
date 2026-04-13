@@ -272,3 +272,53 @@ func TestHotkeyManager_UnregisterAllResetsState(t *testing.T) {
 		t.Errorf("nextID not reset: got %d, want 1", hm.nextID)
 	}
 }
+
+func TestReloadSummary(t *testing.T) {
+	tests := []struct {
+		name    string
+		total   int
+		enabled bool
+		result  ReloadResult
+		want    string
+	}{
+		{
+			name: "enabled all active",
+			total: 5, enabled: true, result: ReloadResult{},
+			want: "5 hotkeys active",
+		},
+		{
+			name: "enabled with registration errors",
+			total: 5, enabled: true,
+			result: ReloadResult{RegistrationErrors: []error{errExample, errExample}},
+			want:   "3 hotkeys active, 2 registration error(s)",
+		},
+		{
+			name: "enabled all failed",
+			total: 3, enabled: true,
+			result: ReloadResult{RegistrationErrors: []error{errExample, errExample, errExample}},
+			want:   "0 hotkeys active, 3 registration error(s)",
+		},
+		{
+			name: "disabled — does not claim active",
+			total: 5, enabled: false, result: ReloadResult{},
+			want: "5 bindings saved (hotkeys disabled)",
+		},
+		{
+			name: "disabled with stale registration errors ignored",
+			total: 5, enabled: false,
+			result: ReloadResult{RegistrationErrors: []error{errExample}},
+			want:   "5 bindings saved (hotkeys disabled)",
+		},
+		{
+			name: "zero bindings enabled",
+			total: 0, enabled: true, result: ReloadResult{},
+			want: "0 hotkeys active",
+		},
+	}
+	for _, tt := range tests {
+		got := reloadSummary(tt.total, tt.enabled, tt.result)
+		if got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}

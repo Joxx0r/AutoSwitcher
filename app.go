@@ -104,37 +104,53 @@ func (a *App) Run() error {
 	return nil
 }
 
-// Reload unregisters all hotkeys, updates config, re-registers, and persists.
-// Returns a ReloadResult describing any registration or save failures so the
-// caller (typically the settings dialog) can surface them inline. The input
-// slice is deep-cloned before being stored in a.config, so the caller can
-// continue mutating its own working copy without affecting live state.
+// Reload persists the new bindings to disk and, if persistence succeeds,
+// commits them to the running app: unregisters the old hotkeys, replaces
+// a.config.Bindings, and registers the new ones. Returns a ReloadResult
+// describing any registration failure so the caller (typically the settings
+// dialog) can surface it inline.
+//
+// Atomicity: SaveConfig runs first. If the disk write fails, NO live state is
+// touched — the caller can fix the problem and retry without leaving the app
+// in a half-applied state. The input slice is deep-cloned so the caller's
+// working copy can keep being mutated without affecting live state.
 func (a *App) Reload(newBindings []Binding) ReloadResult {
+	cloned := cloneBindings(newBindings)
+
+	// Persist first. If this fails, the running app keeps its previous
+	// hotkeys and the disk file is unchanged (SaveConfig is atomic via
+	// temp-file + rename).
+	trial := *a.config
+	trial.Bindings = cloned
+	if err := SaveConfig(a.configPath, &trial); err != nil {
+		log.Printf("Reload: save failed, live state unchanged: %v", err)
+		a.tray.ShowBalloon("AutoSwitcher", "Failed to save configuration")
+		return ReloadResult{SaveError: err}
+	}
+
+	// Save succeeded — commit to live state.
 	a.hotkeys.UnregisterAll()
-	a.config.Bindings = cloneBindings(newBindings)
+	a.config.Bindings = cloned
 	var result ReloadResult
 	if a.enabled {
 		result.RegistrationErrors = a.hotkeys.RegisterAll(a.config.Bindings, true)
 	}
-	if err := SaveConfig(a.configPath, a.config); err != nil {
-		log.Printf("Error saving config: %v", err)
-		result.SaveError = err
-	}
-	a.tray.ShowBalloon("AutoSwitcher", reloadSummary(len(a.config.Bindings), result))
-	log.Printf("Config reloaded with %d bindings (%d registration errors, save error: %v)",
-		len(a.config.Bindings), len(result.RegistrationErrors), result.SaveError)
+	a.tray.ShowBalloon("AutoSwitcher", reloadSummary(len(a.config.Bindings), a.enabled, result))
+	log.Printf("Config reloaded with %d bindings (enabled=%v, %d registration errors)",
+		len(a.config.Bindings), a.enabled, len(result.RegistrationErrors))
 	return result
 }
 
 // reloadSummary builds the one-line tray balloon text for a Reload result.
-func reloadSummary(total int, result ReloadResult) string {
+// Pure function — exported (lowercase) for testing.
+func reloadSummary(total int, enabled bool, result ReloadResult) string {
+	if !enabled {
+		return fmt.Sprintf("%d bindings saved (hotkeys disabled)", total)
+	}
 	active := total - len(result.RegistrationErrors)
 	parts := []string{fmt.Sprintf("%d hotkeys active", active)}
 	if len(result.RegistrationErrors) > 0 {
-		parts = append(parts, fmt.Sprintf("%d conflict(s)", len(result.RegistrationErrors)))
-	}
-	if result.SaveError != nil {
-		parts = append(parts, "save failed")
+		parts = append(parts, fmt.Sprintf("%d registration error(s)", len(result.RegistrationErrors)))
 	}
 	return strings.Join(parts, ", ")
 }
