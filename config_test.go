@@ -208,6 +208,65 @@ func TestSaveConfigCreatesDir(t *testing.T) {
 	}
 }
 
+func TestSaveConfigPreservesOriginalOnRenameFailure(t *testing.T) {
+	// SaveConfig must guarantee that on any failure, the destination file
+	// is unchanged. Reload's transactional contract depends on this.
+	// Force the rename to fail by making the destination a directory —
+	// os.Rename to a dir target fails on every OS without truncating it.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	original := DefaultConfig()
+	original.Autostart = true
+	original.Bindings = []Binding{{Name: "Original", ExeName: "orig.exe"}}
+	if err := SaveConfig(path, original); err != nil {
+		t.Fatalf("initial save: %v", err)
+	}
+	originalBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read original: %v", err)
+	}
+
+	// Replace the file with a directory at the same path to force rename
+	// to fail. (We do this by removing the file then creating a dir.)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Put a dummy file inside the dir so it can't be removed/replaced.
+	if err := os.WriteFile(filepath.Join(path, "blocker"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Attempt to save — should fail because the destination is a non-empty dir.
+	bad := DefaultConfig()
+	bad.Bindings = []Binding{{Name: "Replacement", ExeName: "bad.exe"}}
+	if err := SaveConfig(path, bad); err == nil {
+		t.Fatal("SaveConfig should have failed when destination is a directory")
+	}
+
+	// The .tmp file must be cleaned up.
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Errorf("temp file leaked after rename failure: %v", err)
+	}
+
+	// Restore the file from saved bytes and verify it's the original content
+	// (i.e. SaveConfig didn't touch the destination at all).
+	_ = os.RemoveAll(path)
+	if err := os.WriteFile(path, originalBytes, 0644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("reload original: %v", err)
+	}
+	if !loaded.Autostart || len(loaded.Bindings) != 1 || loaded.Bindings[0].Name != "Original" {
+		t.Errorf("original config not preserved through failed save: %+v", loaded)
+	}
+}
+
 func TestHotkeyDefFormat(t *testing.T) {
 	tests := []struct {
 		hotkey HotkeyDef

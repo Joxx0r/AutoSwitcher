@@ -104,22 +104,30 @@ func (a *App) Run() error {
 	return nil
 }
 
-// Reload persists the new bindings to disk and, if persistence succeeds,
-// commits them to the running app: unregisters the old hotkeys, replaces
-// a.config.Bindings, and registers the new ones. Returns a ReloadResult
-// describing any registration failure so the caller (typically the settings
-// dialog) can surface it inline.
+// Reload atomically applies a new set of bindings: persists to disk, swaps
+// live state, registers new hotkeys. Returns a ReloadResult describing any
+// failure so the caller (the settings dialog) can surface it inline.
 //
-// Atomicity: SaveConfig runs first. If the disk write fails, NO live state is
-// touched — the caller can fix the problem and retry without leaving the app
-// in a half-applied state. The input slice is deep-cloned so the caller's
-// working copy can keep being mutated without affecting live state.
+// Transactional semantics:
+//
+//   - SaveConfig runs first. On disk-write failure, NO live state is touched
+//     and the on-disk file is unchanged. Caller gets SaveError and can retry.
+//   - On registration failure (e.g. hotkey conflict, invalid key), the
+//     previous bindings are rolled back: live HotkeyManager is restored,
+//     a.config.Bindings is restored, and the on-disk file is rewritten with
+//     the previous state. The dialog can then stay open and the user can
+//     fix the conflict and retry — exactly the contract the UI implies.
+//
+// The input slice is deep-cloned, so the caller's working copy can keep
+// being mutated without affecting live state.
 func (a *App) Reload(newBindings []Binding) ReloadResult {
 	cloned := cloneBindings(newBindings)
 
+	// Snapshot for rollback.
+	prevBindings := cloneBindings(a.config.Bindings)
+
 	// Persist first. If this fails, the running app keeps its previous
-	// hotkeys and the disk file is unchanged (SaveConfig is atomic via
-	// temp-file + rename).
+	// hotkeys and the disk file is unchanged.
 	trial := *a.config
 	trial.Bindings = cloned
 	if err := SaveConfig(a.configPath, &trial); err != nil {
@@ -135,9 +143,35 @@ func (a *App) Reload(newBindings []Binding) ReloadResult {
 	if a.enabled {
 		result.RegistrationErrors = a.hotkeys.RegisterAll(a.config.Bindings, true)
 	}
+
+	// On any registration failure, roll back to the previous state so
+	// the dialog's stay-open semantics are actually a transaction.
+	if len(result.RegistrationErrors) > 0 {
+		log.Printf("Reload: %d registration error(s), rolling back", len(result.RegistrationErrors))
+		a.hotkeys.UnregisterAll()
+		a.config.Bindings = prevBindings
+		if a.enabled {
+			// Best-effort re-register old bindings. If this fails (e.g.
+			// another app grabbed a hotkey in the meantime), we log it
+			// but still report the original errors as the user-visible
+			// failure — the user's actionable info is the original.
+			if rollbackErrs := a.hotkeys.RegisterAll(a.config.Bindings, true); len(rollbackErrs) > 0 {
+				log.Printf("Reload: rollback re-register hit %d error(s)", len(rollbackErrs))
+			}
+		}
+		// Restore disk file. If this fails, log it; the in-memory state
+		// is still consistent and the user can fix and retry.
+		prevTrial := *a.config
+		prevTrial.Bindings = prevBindings
+		if err := SaveConfig(a.configPath, &prevTrial); err != nil {
+			log.Printf("Reload: rollback save failed: %v", err)
+		}
+		a.tray.ShowBalloon("AutoSwitcher", reloadSummary(len(a.config.Bindings), a.enabled, result))
+		return result
+	}
+
 	a.tray.ShowBalloon("AutoSwitcher", reloadSummary(len(a.config.Bindings), a.enabled, result))
-	log.Printf("Config reloaded with %d bindings (enabled=%v, %d registration errors)",
-		len(a.config.Bindings), a.enabled, len(result.RegistrationErrors))
+	log.Printf("Config reloaded with %d bindings (enabled=%v)", len(a.config.Bindings), a.enabled)
 	return result
 }
 

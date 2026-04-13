@@ -140,9 +140,15 @@ func LoadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// SaveConfig writes config to the given path.
-// Uses a write-to-temp-then-rename strategy for safety. On Windows,
-// os.Rename cannot overwrite, so we fall back to direct write if needed.
+// SaveConfig writes config atomically to the given path. Uses
+// write-to-temp-then-rename: on Windows, modern Go's os.Rename calls
+// MoveFileEx with MOVEFILE_REPLACE_EXISTING, which atomically replaces
+// the destination on NTFS. Either the new file is fully in place, or
+// the original file is unchanged. There is no partial-write window.
+//
+// On any failure (temp write, rename), the temp file is removed and an
+// error is returned without touching the destination — so callers can
+// rely on "if SaveConfig errors, the on-disk file is unchanged."
 func SaveConfig(path string, cfg *Config) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -154,21 +160,14 @@ func SaveConfig(path string, cfg *Config) error {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
 
-	// Try temp-file-then-rename for new files
 	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return fmt.Errorf("writing temp config: %w", err)
 	}
 
-	if err := os.Rename(tmpPath, path); err == nil {
-		return nil // fresh write succeeded
-	}
-
-	// Rename failed (likely because destination exists on Windows).
-	// Clean up temp file and write directly to the destination.
-	_ = os.Remove(tmpPath)
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("writing config: %w", err)
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("renaming temp config: %w", err)
 	}
 	return nil
 }
