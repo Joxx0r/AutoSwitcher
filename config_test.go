@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -209,10 +211,11 @@ func TestSaveConfigCreatesDir(t *testing.T) {
 }
 
 func TestSaveConfigPreservesOriginalOnRenameFailure(t *testing.T) {
-	// SaveConfig must guarantee that on any failure, the destination file
-	// is unchanged. Reload's transactional contract depends on this.
-	// Force the rename to fail by making the destination a directory —
-	// os.Rename to a dir target fails on every OS without truncating it.
+	// SaveConfig's contract: if the rename step fails, the destination file
+	// is unchanged on disk and the temp file is cleaned up. Reload's
+	// transactional rollback depends on this. We use the renameFile seam to
+	// inject a deterministic rename failure and then read the destination
+	// bytes BEFORE and AFTER the failed save to prove they're identical.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
 
@@ -222,48 +225,48 @@ func TestSaveConfigPreservesOriginalOnRenameFailure(t *testing.T) {
 	if err := SaveConfig(path, original); err != nil {
 		t.Fatalf("initial save: %v", err)
 	}
-	originalBytes, err := os.ReadFile(path)
+	beforeBytes, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read original: %v", err)
 	}
 
-	// Replace the file with a directory at the same path to force rename
-	// to fail. (We do this by removing the file then creating a dir.)
-	if err := os.Remove(path); err != nil {
-		t.Fatal(err)
+	// Inject a rename failure for the next SaveConfig call.
+	origRename := renameFile
+	renameFile = func(_, _ string) error {
+		return fmt.Errorf("simulated rename failure")
 	}
-	if err := os.Mkdir(path, 0755); err != nil {
-		t.Fatal(err)
-	}
-	// Put a dummy file inside the dir so it can't be removed/replaced.
-	if err := os.WriteFile(filepath.Join(path, "blocker"), []byte("x"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	defer func() { renameFile = origRename }()
 
-	// Attempt to save — should fail because the destination is a non-empty dir.
+	// Attempt to overwrite with different content. Should fail.
 	bad := DefaultConfig()
+	bad.Autostart = false
 	bad.Bindings = []Binding{{Name: "Replacement", ExeName: "bad.exe"}}
 	if err := SaveConfig(path, bad); err == nil {
-		t.Fatal("SaveConfig should have failed when destination is a directory")
+		t.Fatal("SaveConfig should have failed with injected rename error")
 	}
 
-	// The .tmp file must be cleaned up.
+	// The temp file must be cleaned up even on failure.
 	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
 		t.Errorf("temp file leaked after rename failure: %v", err)
 	}
 
-	// Restore the file from saved bytes and verify it's the original content
-	// (i.e. SaveConfig didn't touch the destination at all).
-	_ = os.RemoveAll(path)
-	if err := os.WriteFile(path, originalBytes, 0644); err != nil {
-		t.Fatal(err)
+	// Read the destination bytes — must be byte-identical to the original
+	// content from before the failed save attempt.
+	afterBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read destination after failed save: %v", err)
 	}
+	if !bytes.Equal(beforeBytes, afterBytes) {
+		t.Errorf("destination file modified by failed SaveConfig\nbefore: %s\nafter:  %s", beforeBytes, afterBytes)
+	}
+
+	// Sanity check: loading should still give the original config.
 	loaded, err := LoadConfig(path)
 	if err != nil {
-		t.Fatalf("reload original: %v", err)
+		t.Fatalf("LoadConfig after failed save: %v", err)
 	}
 	if !loaded.Autostart || len(loaded.Bindings) != 1 || loaded.Bindings[0].Name != "Original" {
-		t.Errorf("original config not preserved through failed save: %+v", loaded)
+		t.Errorf("original config not preserved: %+v", loaded)
 	}
 }
 
@@ -359,7 +362,10 @@ func TestReloadResult_HasErrors(t *testing.T) {
 		{"empty", ReloadResult{}, false},
 		{"only registration errors", ReloadResult{RegistrationErrors: []error{errExample}}, true},
 		{"only save error", ReloadResult{SaveError: errExample}, true},
-		{"both", ReloadResult{RegistrationErrors: []error{errExample}, SaveError: errExample}, true},
+		{"only rollback save error", ReloadResult{RollbackSaveError: errExample}, true},
+		{"registration + save", ReloadResult{RegistrationErrors: []error{errExample}, SaveError: errExample}, true},
+		{"registration + rollback", ReloadResult{RegistrationErrors: []error{errExample}, RollbackSaveError: errExample}, true},
+		{"all three", ReloadResult{RegistrationErrors: []error{errExample}, SaveError: errExample, RollbackSaveError: errExample}, true},
 	}
 	for _, tt := range tests {
 		if got := tt.result.HasErrors(); got != tt.want {

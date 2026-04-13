@@ -81,16 +81,28 @@ func cloneBindings(src []Binding) []Binding {
 // ReloadResult describes the outcome of an App.Reload call. It distinguishes
 // hotkey registration failures (conflicts, invalid keys) from configuration
 // persistence failures so callers can decide how to surface each — e.g. the
-// settings dialog keeps itself open if either is non-empty.
+// settings dialog keeps itself open if any field is non-empty.
+//
+// SaveError is the error from the initial SaveConfig that gates the commit.
+// If non-nil, no live state was changed and the on-disk file is unchanged.
+//
+// RegistrationErrors lists per-binding failures from the initial register
+// attempt. When non-empty, Reload rolls back to the previous state.
+//
+// RollbackSaveError is the error from re-persisting the previous state
+// during rollback. If non-nil, the in-memory state was successfully reverted
+// but the on-disk file may still hold the rejected candidate set — a real
+// inconsistency the user needs to know about.
 type ReloadResult struct {
 	RegistrationErrors []error
 	SaveError          error
+	RollbackSaveError  error
 }
 
 // HasErrors reports whether the reload had any failure the caller should
 // surface. Used by the settings dialog to decide whether to stay open.
 func (r ReloadResult) HasErrors() bool {
-	return len(r.RegistrationErrors) > 0 || r.SaveError != nil
+	return len(r.RegistrationErrors) > 0 || r.SaveError != nil || r.RollbackSaveError != nil
 }
 
 // ConfigDir returns the application config directory (%APPDATA%\AutoSwitcher).
@@ -140,15 +152,25 @@ func LoadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// SaveConfig writes config atomically to the given path. Uses
-// write-to-temp-then-rename: on Windows, modern Go's os.Rename calls
-// MoveFileEx with MOVEFILE_REPLACE_EXISTING, which atomically replaces
-// the destination on NTFS. Either the new file is fully in place, or
-// the original file is unchanged. There is no partial-write window.
+// renameFile is the rename primitive SaveConfig uses; tests swap it to
+// inject deterministic failures without touching the real filesystem.
+var renameFile = os.Rename
+
+// SaveConfig writes config to the given path using a temp-file-then-rename
+// strategy. On Windows/NTFS, Go's os.Rename calls MoveFileEx with
+// MOVEFILE_REPLACE_EXISTING, which atomically replaces the destination —
+// so on the supported platform, the on-disk file is either fully the new
+// content or fully the previous content, with no partial-write window.
+// Go's general os.Rename docs caveat that this is not guaranteed on every
+// non-Unix filesystem (e.g. FAT32, network shares); on those, the rename
+// step itself may be non-atomic, but the temp-file-first approach still
+// avoids the failure mode of a half-written destination from a single
+// truncating write.
 //
-// On any failure (temp write, rename), the temp file is removed and an
-// error is returned without touching the destination — so callers can
-// rely on "if SaveConfig errors, the on-disk file is unchanged."
+// On any failure (temp write or rename), the temp file is cleaned up and
+// an error is returned. The destination is not touched on the rename-error
+// path — callers can rely on "if SaveConfig returns an error from a rename
+// failure, the on-disk file is unchanged."
 func SaveConfig(path string, cfg *Config) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -165,7 +187,7 @@ func SaveConfig(path string, cfg *Config) error {
 		return fmt.Errorf("writing temp config: %w", err)
 	}
 
-	if err := os.Rename(tmpPath, path); err != nil {
+	if err := renameFile(tmpPath, path); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("renaming temp config: %w", err)
 	}

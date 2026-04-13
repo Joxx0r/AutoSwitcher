@@ -273,6 +273,43 @@ func TestHotkeyManager_UnregisterAllResetsState(t *testing.T) {
 	}
 }
 
+func TestRollbackSummary(t *testing.T) {
+	tests := []struct {
+		name   string
+		result ReloadResult
+		want   string
+	}{
+		{
+			name: "rollback succeeded",
+			result: ReloadResult{
+				RegistrationErrors: []error{errExample, errExample},
+			},
+			want: "Reload failed (2 registration error(s)), prior state restored",
+		},
+		{
+			name: "rollback save also failed",
+			result: ReloadResult{
+				RegistrationErrors: []error{errExample},
+				RollbackSaveError:  errExample,
+			},
+			want: "Reload failed (1 registration error(s)), rollback save failed — disk may be inconsistent",
+		},
+		{
+			name: "many failures, rollback ok",
+			result: ReloadResult{
+				RegistrationErrors: []error{errExample, errExample, errExample, errExample, errExample},
+			},
+			want: "Reload failed (5 registration error(s)), prior state restored",
+		},
+	}
+	for _, tt := range tests {
+		got := rollbackSummary(tt.result)
+		if got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
 func TestReloadSummary(t *testing.T) {
 	tests := []struct {
 		name    string

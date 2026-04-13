@@ -90,7 +90,8 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 		}
 		msg := ""
 		if len(result.RegistrationErrors) > 0 {
-			msg += "The following bindings could not be registered:\n\n"
+			msg += "The following bindings could not be registered. " +
+				"Previous settings have been restored — fix the conflicts and click Apply to retry:\n\n"
 			for _, e := range result.RegistrationErrors {
 				msg += "  • " + e.Error() + "\n"
 			}
@@ -100,6 +101,16 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 				msg += "\n"
 			}
 			msg += "Failed to save configuration:\n  " + result.SaveError.Error()
+		}
+		if result.RollbackSaveError != nil {
+			if msg != "" {
+				msg += "\n"
+			}
+			msg += "WARNING: Failed to restore the previous configuration to disk:\n  " +
+				result.RollbackSaveError.Error() +
+				"\n\nLive hotkeys are correct, but the on-disk config may still hold the rejected " +
+				"settings. The next restart could load the broken state. Re-open settings and Apply " +
+				"the previous (working) bindings to repair the file."
 		}
 		walk.MsgBox(dlg, "Settings Errors", msg, walk.MsgBoxIconWarning)
 	}

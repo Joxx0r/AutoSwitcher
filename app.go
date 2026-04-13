@@ -159,20 +159,36 @@ func (a *App) Reload(newBindings []Binding) ReloadResult {
 				log.Printf("Reload: rollback re-register hit %d error(s)", len(rollbackErrs))
 			}
 		}
-		// Restore disk file. If this fails, log it; the in-memory state
-		// is still consistent and the user can fix and retry.
+		// Restore disk file. If this fails, capture it in result so the
+		// dialog can warn the user that on-disk state is inconsistent
+		// with live state.
 		prevTrial := *a.config
 		prevTrial.Bindings = prevBindings
 		if err := SaveConfig(a.configPath, &prevTrial); err != nil {
 			log.Printf("Reload: rollback save failed: %v", err)
+			result.RollbackSaveError = err
 		}
-		a.tray.ShowBalloon("AutoSwitcher", reloadSummary(len(a.config.Bindings), a.enabled, result))
+		a.tray.ShowBalloon("AutoSwitcher", rollbackSummary(result))
 		return result
 	}
 
 	a.tray.ShowBalloon("AutoSwitcher", reloadSummary(len(a.config.Bindings), a.enabled, result))
 	log.Printf("Config reloaded with %d bindings (enabled=%v)", len(a.config.Bindings), a.enabled)
 	return result
+}
+
+// rollbackSummary builds the tray balloon text for a Reload that rolled
+// back. The "active" count from reloadSummary is meaningless here because
+// the failed candidate set's error count doesn't apply to the restored set
+// — so this path uses a dedicated message instead.
+func rollbackSummary(result ReloadResult) string {
+	parts := []string{fmt.Sprintf("Reload failed (%d registration error(s))", len(result.RegistrationErrors))}
+	if result.RollbackSaveError != nil {
+		parts = append(parts, "rollback save failed — disk may be inconsistent")
+	} else {
+		parts = append(parts, "prior state restored")
+	}
+	return strings.Join(parts, ", ")
 }
 
 // reloadSummary builds the one-line tray balloon text for a Reload result.
