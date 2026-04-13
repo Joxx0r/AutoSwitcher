@@ -66,3 +66,31 @@ func (s *RecorderState) ProcessKeyEvent(vkCode uint32, isKeyDown bool) RecorderA
 	}
 	return RecorderSuppress
 }
+
+// BackgroundKeyEvent updates HeldModifiers from a key event observed while
+// the recorder dialog is not the foreground window. Only modifier transitions
+// are tracked; non-modifier keys are ignored. Use this from the hook callback
+// so HeldModifiers stays current across focus loss without ever clobbering
+// the dialog's own captures.
+func (s *RecorderState) BackgroundKeyEvent(vkCode uint32, isKeyDown bool) {
+	modBit := VKToModifierBit(vkCode)
+	if modBit == 0 {
+		return
+	}
+	if isKeyDown {
+		s.HeldModifiers |= modBit
+	} else {
+		s.HeldModifiers &^= modBit
+	}
+}
+
+// ResyncFromSnapshot replaces HeldModifiers with a fresh snapshot of the
+// physical keyboard state. This is the safety net for cases the LL keyboard
+// hook can't observe — secure desktop transitions (UAC, Ctrl+Alt+Del),
+// session switches, etc. — where modifier up/down events may not reach the
+// hook. Call this on focus regain, not in the middle of a keydown decision:
+// at the moment of focus regain no hook suppression is in flight, so
+// GetAsyncKeyState reliably reflects the physical state.
+func (s *RecorderState) ResyncFromSnapshot(snapshot uint32) {
+	s.HeldModifiers = snapshot
+}

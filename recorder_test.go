@@ -199,3 +199,134 @@ func TestRecorderProcessKeyEvent_ModifierSnapshotBeforeRelease(t *testing.T) {
 		t.Errorf("CapturedMods after release = 0x%X, want 0x%X (should be snapshot)", s.CapturedMods, modWin|modControl)
 	}
 }
+
+func TestRecorderBackgroundKeyEvent_TracksModifierDownUp(t *testing.T) {
+	s := &RecorderState{}
+
+	s.BackgroundKeyEvent(0xA2, true) // VK_LCONTROL down while backgrounded
+	if s.HeldModifiers != modControl {
+		t.Errorf("after Ctrl down: HeldModifiers = 0x%X, want 0x%X", s.HeldModifiers, modControl)
+	}
+
+	s.BackgroundKeyEvent(0xA4, true) // VK_LMENU down
+	if s.HeldModifiers != modControl|modAlt {
+		t.Errorf("after Alt down: HeldModifiers = 0x%X, want 0x%X", s.HeldModifiers, modControl|modAlt)
+	}
+
+	s.BackgroundKeyEvent(0xA2, false) // VK_LCONTROL up
+	if s.HeldModifiers != modAlt {
+		t.Errorf("after Ctrl up: HeldModifiers = 0x%X, want 0x%X", s.HeldModifiers, modAlt)
+	}
+}
+
+func TestRecorderBackgroundKeyEvent_IgnoresNonModifiers(t *testing.T) {
+	// Non-modifier keys observed while backgrounded must not touch state —
+	// the user is typing into another application.
+	s := &RecorderState{HeldModifiers: modControl}
+
+	s.BackgroundKeyEvent(0x41, true)  // 'A' down
+	s.BackgroundKeyEvent(0x74, true)  // F5 down
+	s.BackgroundKeyEvent(0x41, false) // 'A' up
+
+	if s.HeldModifiers != modControl {
+		t.Errorf("HeldModifiers mutated by non-modifier key: 0x%X, want 0x%X", s.HeldModifiers, modControl)
+	}
+	if s.CapturedKey != 0 || s.CapturedMods != 0 {
+		t.Errorf("CapturedKey/Mods unexpectedly set: key=0x%X, mods=0x%X", s.CapturedKey, s.CapturedMods)
+	}
+	if s.Done {
+		t.Error("Done unexpectedly set true while backgrounded")
+	}
+}
+
+func TestRecorderResyncFromSnapshot_RecoversMissedRelease(t *testing.T) {
+	// Codex scenario: user holds Ctrl, dialog loses focus during a secure
+	// desktop transition, Ctrl is released elsewhere, the LL hook never sees
+	// the keyup, dialog regains focus. The focus-regain resync must replace
+	// the stale Ctrl bit so a subsequent bare 'A' is rejected and bare Esc
+	// cancels.
+	s := &RecorderState{HeldModifiers: modControl}
+
+	s.ResyncFromSnapshot(0) // physical state shows nothing held
+
+	if s.HeldModifiers != 0 {
+		t.Fatalf("after resync: HeldModifiers = 0x%X, want 0", s.HeldModifiers)
+	}
+
+	if action := s.ProcessKeyEvent(0x41, true); action != RecorderNeedModifier {
+		t.Errorf("post-resync bare A: got %d, want RecorderNeedModifier", action)
+	}
+
+	s2 := &RecorderState{HeldModifiers: modControl}
+	s2.ResyncFromSnapshot(0)
+	if action := s2.ProcessKeyEvent(0x1B, true); action != RecorderCancel {
+		t.Errorf("post-resync bare Esc: got %d, want RecorderCancel", action)
+	}
+}
+
+func TestRecorderResyncFromSnapshot_PreservesStillHeld(t *testing.T) {
+	// If a modifier is still physically held at focus regain, it must remain
+	// in HeldModifiers so the next non-modifier key captures it.
+	s := &RecorderState{HeldModifiers: modControl}
+
+	s.ResyncFromSnapshot(modShift) // Ctrl was released, Shift is now held instead
+
+	action := s.ProcessKeyEvent(0x41, true) // 'A' with Shift
+	if action != RecorderAccept {
+		t.Errorf("Shift+A after resync: got %d, want RecorderAccept", action)
+	}
+	if s.CapturedMods != modShift {
+		t.Errorf("CapturedMods = 0x%X, want 0x%X", s.CapturedMods, modShift)
+	}
+}
+
+func TestRecorderFocusLossThenRegain_FullCycle(t *testing.T) {
+	// End-to-end simulation of the integration path that hookCB exercises:
+	//   1. Foreground: track Ctrl down via ProcessKeyEvent.
+	//   2. Focus loss: simulate user releasing Ctrl outside our process via
+	//      BackgroundKeyEvent (the LL hook observes it system-wide).
+	//   3. Focus regain: ResyncFromSnapshot reconciles against the physical
+	//      keyboard state.
+	//   4. Foreground: bare 'A' should be rejected (no modifier held).
+	s := &RecorderState{}
+
+	if action := s.ProcessKeyEvent(0xA2, true); action != RecorderUpdateLabel {
+		t.Fatalf("Ctrl down: got %d, want RecorderUpdateLabel", action)
+	}
+	if s.HeldModifiers != modControl {
+		t.Fatalf("HeldModifiers = 0x%X, want 0x%X", s.HeldModifiers, modControl)
+	}
+
+	// Backgrounded — user releases Ctrl outside the dialog
+	s.BackgroundKeyEvent(0xA2, false)
+	if s.HeldModifiers != 0 {
+		t.Fatalf("after background Ctrl up: HeldModifiers = 0x%X, want 0", s.HeldModifiers)
+	}
+
+	// Focus regain — physical state confirms nothing is held
+	s.ResyncFromSnapshot(0)
+
+	// Foreground — bare 'A' must be rejected
+	if action := s.ProcessKeyEvent(0x41, true); action != RecorderNeedModifier {
+		t.Errorf("bare A after focus cycle: got %d, want RecorderNeedModifier", action)
+	}
+}
+
+func TestRecorderFocusLossWithMissedRelease_RegainResyncs(t *testing.T) {
+	// Worst case: the LL hook misses the Ctrl up entirely (e.g. during a
+	// secure desktop transition). Without the focus-regain resync the stale
+	// Ctrl bit would let bare 'A' incorrectly capture as Ctrl+A. With
+	// ResyncFromSnapshot reflecting the true physical state, it must reject.
+	s := &RecorderState{}
+
+	s.ProcessKeyEvent(0xA2, true) // Ctrl down
+
+	// Hook never observes the Ctrl up (no BackgroundKeyEvent call).
+	// HeldModifiers is now stale.
+
+	s.ResyncFromSnapshot(0) // focus regain, true state is "nothing held"
+
+	if action := s.ProcessKeyEvent(0x41, true); action != RecorderNeedModifier {
+		t.Errorf("bare A after missed-release resync: got %d, want RecorderNeedModifier", action)
+	}
+}

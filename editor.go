@@ -223,22 +223,35 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 		setLabel(text)
 	}
 
+	// wasForeground tracks the dialog's previous foreground status so we can
+	// detect background→foreground transitions and resync from the actual
+	// keyboard state (covers events the LL hook can't see, e.g. modifier
+	// releases during a secure desktop or session switch).
+	wasForeground := true
+
 	// hookCB delegates to the pure RecorderState.ProcessKeyEvent and posts
 	// UI work to the Walk message loop via dlg.Synchronize. When the dialog
-	// isn't the foreground window we still update HeldModifiers so the tracked
-	// state never goes stale across focus loss, but we don't capture or
-	// suppress — keys flow through to the real foreground app.
+	// isn't the foreground window we still update HeldModifiers via
+	// BackgroundKeyEvent so the tracked state never goes stale across focus
+	// loss, but we don't capture or suppress — keys flow through to the real
+	// foreground app.
 	hookCB := func(vkCode uint32, isKeyDown bool, isForeground bool) bool {
 		if !isForeground {
-			if modBit := VKToModifierBit(vkCode); modBit != 0 {
-				if isKeyDown {
-					state.HeldModifiers |= modBit
-				} else {
-					state.HeldModifiers &^= modBit
-				}
-			}
+			state.BackgroundKeyEvent(vkCode, isKeyDown)
+			wasForeground = false
 			return false
 		}
+
+		// Foreground: if we just regained focus, reconcile against the
+		// physical keyboard state to recover from any missed transitions.
+		if !wasForeground {
+			state.ResyncFromSnapshot(getHeldModifiers())
+			wasForeground = true
+			if ready {
+				dlg.Synchronize(func() { updateLabel() })
+			}
+		}
+
 		if !ready {
 			return true // suppress keys before dialog is ready
 		}
