@@ -205,9 +205,7 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 	var statusLabel *walk.Label
 	var ready bool // set after dialog widgets are assigned
 
-	state := RecorderState{
-		ResyncModifiers: getHeldModifiers,
-	}
+	state := RecorderState{}
 
 	setLabel := func(text string) {
 		if statusLabel != nil {
@@ -226,8 +224,21 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 	}
 
 	// hookCB delegates to the pure RecorderState.ProcessKeyEvent and posts
-	// UI work to the Walk message loop via dlg.Synchronize.
-	hookCB := func(vkCode uint32, isKeyDown bool) bool {
+	// UI work to the Walk message loop via dlg.Synchronize. When the dialog
+	// isn't the foreground window we still update HeldModifiers so the tracked
+	// state never goes stale across focus loss, but we don't capture or
+	// suppress — keys flow through to the real foreground app.
+	hookCB := func(vkCode uint32, isKeyDown bool, isForeground bool) bool {
+		if !isForeground {
+			if modBit := VKToModifierBit(vkCode); modBit != 0 {
+				if isKeyDown {
+					state.HeldModifiers |= modBit
+				} else {
+					state.HeldModifiers &^= modBit
+				}
+			}
+			return false
+		}
 		if !ready {
 			return true // suppress keys before dialog is ready
 		}

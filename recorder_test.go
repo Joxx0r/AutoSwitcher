@@ -126,53 +126,56 @@ func TestRecorderProcessKeyEvent_SuppressAfterDone(t *testing.T) {
 	}
 }
 
-func TestRecorderProcessKeyEvent_ResyncOnFocusRegain(t *testing.T) {
-	// Simulate: user holds Ctrl, dialog loses focus, Ctrl is released elsewhere,
-	// dialog regains focus, user presses 'A'. ResyncModifiers should detect
-	// Ctrl is no longer held and reject the bare key.
-	s := &RecorderState{
-		HeldModifiers: modControl, // stale — was held when focus was lost
-		ResyncModifiers: func() uint32 {
-			return 0 // nothing held anymore
-		},
+func TestRecorderProcessKeyEvent_TrackedModifierPlusFunctionKey(t *testing.T) {
+	// Regression: pressing a non-modifier key after tracking a modifier must
+	// not clobber HeldModifiers. Previously the resync path overwrote tracked
+	// state with GetAsyncKeyState, which can miss hook-suppressed modifiers,
+	// causing Ctrl+F5 to be captured as bare F5.
+	s := &RecorderState{}
+
+	s.ProcessKeyEvent(0xA2, true) // VK_LCONTROL down
+	if s.HeldModifiers != modControl {
+		t.Fatalf("after Ctrl down: HeldModifiers = 0x%X, want 0x%X", s.HeldModifiers, modControl)
 	}
 
-	action := s.ProcessKeyEvent(0x41, true) // 'A' with stale Ctrl
-	if action != RecorderNeedModifier {
-		t.Errorf("resync bare A: got %d, want RecorderNeedModifier", action)
-	}
-}
-
-func TestRecorderProcessKeyEvent_ResyncEscapeAfterFocusLoss(t *testing.T) {
-	// Stale Ctrl held, but resync shows nothing held — Escape should cancel
-	s := &RecorderState{
-		HeldModifiers: modControl,
-		ResyncModifiers: func() uint32 {
-			return 0
-		},
-	}
-
-	action := s.ProcessKeyEvent(0x1B, true)
-	if action != RecorderCancel {
-		t.Errorf("Escape after stale resync: got %d, want RecorderCancel", action)
-	}
-}
-
-func TestRecorderProcessKeyEvent_ResyncKeepsRealModifiers(t *testing.T) {
-	// ResyncModifiers confirms Win is still held
-	s := &RecorderState{
-		HeldModifiers: modWin,
-		ResyncModifiers: func() uint32 {
-			return modWin // still held
-		},
-	}
-
-	action := s.ProcessKeyEvent(0x31, true) // '1' with Win
+	action := s.ProcessKeyEvent(0x74, true) // F5 down
 	if action != RecorderAccept {
-		t.Errorf("resync Win+1: got %d, want RecorderAccept", action)
+		t.Errorf("Ctrl+F5: got %d, want RecorderAccept", action)
 	}
-	if s.CapturedMods != modWin {
-		t.Errorf("CapturedMods = 0x%X, want 0x%X", s.CapturedMods, modWin)
+	if s.CapturedKey != 0x74 {
+		t.Errorf("CapturedKey = 0x%X, want 0x74", s.CapturedKey)
+	}
+	if s.CapturedMods != modControl {
+		t.Errorf("CapturedMods = 0x%X, want 0x%X", s.CapturedMods, modControl)
+	}
+}
+
+func TestRecorderProcessKeyEvent_TrackedModifierPlusLetter(t *testing.T) {
+	// Regression: Ctrl+A via the tracking path must capture both, not get
+	// rejected as bare 'A' due to a clobbered HeldModifiers.
+	s := &RecorderState{}
+
+	s.ProcessKeyEvent(0xA2, true) // VK_LCONTROL down
+	action := s.ProcessKeyEvent(0x41, true) // 'A' down
+	if action != RecorderAccept {
+		t.Errorf("Ctrl+A: got %d, want RecorderAccept", action)
+	}
+	if s.CapturedMods != modControl {
+		t.Errorf("CapturedMods = 0x%X, want 0x%X", s.CapturedMods, modControl)
+	}
+}
+
+func TestRecorderProcessKeyEvent_NonModifierDoesNotTouchHeldModifiers(t *testing.T) {
+	// A non-modifier keydown should never mutate HeldModifiers — it either
+	// accepts (snapshotting into CapturedMods) or rejects.
+	s := &RecorderState{HeldModifiers: modShift | modAlt}
+
+	s.ProcessKeyEvent(0x74, true) // F5 down — accepts
+	if s.HeldModifiers != modShift|modAlt {
+		t.Errorf("HeldModifiers mutated: 0x%X, want 0x%X", s.HeldModifiers, modShift|modAlt)
+	}
+	if s.CapturedMods != modShift|modAlt {
+		t.Errorf("CapturedMods = 0x%X, want 0x%X", s.CapturedMods, modShift|modAlt)
 	}
 }
 

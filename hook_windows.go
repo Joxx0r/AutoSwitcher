@@ -28,7 +28,7 @@ var (
 var hookState struct {
 	handle   uintptr
 	dlgHWND  uintptr // HWND of the recording dialog, for focus checking
-	callback func(vkCode uint32, isKeyDown bool) bool
+	callback func(vkCode uint32, isKeyDown bool, isForeground bool) bool
 }
 
 // hookProc is a package-level callback stub for the low-level keyboard hook.
@@ -47,20 +47,18 @@ func readHookVK(src uintptr, dst *uint32) {
 // lowLevelKeyboardProc is the raw hook callback registered with SetWindowsHookEx.
 func lowLevelKeyboardProc(nCode int32, wParam uintptr, lParam uintptr) uintptr {
 	if nCode >= 0 && hookState.callback != nil {
-		// Only intercept keys when the recording dialog is in the foreground
-		if hookState.dlgHWND != 0 {
-			fg, _, _ := procGetForegroundWindow.Call()
-			if fg != hookState.dlgHWND {
-				ret, _, _ := procCallNextHookEx.Call(hookState.handle, uintptr(nCode), wParam, lParam)
-				return ret
-			}
-		}
-
 		// lParam points to KBDLLHOOKSTRUCT; VkCode is the first uint32 field.
 		var vkCode uint32
 		readHookVK(lParam, &vkCode)
 		isDown := wParam == wmKeyDown || wParam == wmSysKeyDown
-		if hookState.callback(vkCode, isDown) {
+
+		isForeground := true
+		if hookState.dlgHWND != 0 {
+			fg, _, _ := procGetForegroundWindow.Call()
+			isForeground = fg == hookState.dlgHWND
+		}
+
+		if hookState.callback(vkCode, isDown, isForeground) {
 			return 1 // suppress the key
 		}
 	}
@@ -69,11 +67,12 @@ func lowLevelKeyboardProc(nCode int32, wParam uintptr, lParam uintptr) uintptr {
 }
 
 // installKeyboardHook installs a temporary WH_KEYBOARD_LL hook.
-// The callback receives the VK code and whether it's a key-down event.
-// Return true from the callback to suppress the key.
-// dlgHWND is the recording dialog's window handle — keys are only intercepted
-// when this window is in the foreground.
-func installKeyboardHook(cb func(vkCode uint32, isKeyDown bool) bool, dlgHWND uintptr) error {
+// The callback receives the VK code, whether it's a key-down event, and whether
+// the recording dialog is currently the foreground window. Return true from the
+// callback to suppress the key. The callback is invoked for every system-wide
+// key event so callers can keep tracking modifier state across focus loss; only
+// suppress keys when isForeground is true.
+func installKeyboardHook(cb func(vkCode uint32, isKeyDown bool, isForeground bool) bool, dlgHWND uintptr) error {
 	if hookState.handle != 0 {
 		return fmt.Errorf("keyboard hook already installed")
 	}
