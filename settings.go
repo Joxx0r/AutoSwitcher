@@ -96,6 +96,17 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 				msg += "  • " + e.Error() + "\n"
 			}
 		}
+		if len(result.RollbackRegistrationErrors) > 0 {
+			if msg != "" {
+				msg += "\n"
+			}
+			msg += "WARNING: Some previous bindings could not be re-registered during rollback. " +
+				"Live hotkeys are now degraded — these bindings are inactive even though they were " +
+				"working before:\n\n"
+			for _, e := range result.RollbackRegistrationErrors {
+				msg += "  • " + e.Error() + "\n"
+			}
+		}
 		if result.SaveError != nil {
 			if msg != "" {
 				msg += "\n"

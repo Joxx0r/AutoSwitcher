@@ -89,20 +89,29 @@ func cloneBindings(src []Binding) []Binding {
 // RegistrationErrors lists per-binding failures from the initial register
 // attempt. When non-empty, Reload rolls back to the previous state.
 //
+// RollbackRegistrationErrors lists per-binding failures from the rollback
+// re-register attempt. If non-empty, the previous bindings could not all be
+// reactivated (e.g. another app grabbed a hotkey in the meantime) — live
+// state is degraded relative to what it was before Reload was called.
+//
 // RollbackSaveError is the error from re-persisting the previous state
 // during rollback. If non-nil, the in-memory state was successfully reverted
 // but the on-disk file may still hold the rejected candidate set — a real
 // inconsistency the user needs to know about.
 type ReloadResult struct {
-	RegistrationErrors []error
-	SaveError          error
-	RollbackSaveError  error
+	RegistrationErrors         []error
+	RollbackRegistrationErrors []error
+	SaveError                  error
+	RollbackSaveError          error
 }
 
 // HasErrors reports whether the reload had any failure the caller should
 // surface. Used by the settings dialog to decide whether to stay open.
 func (r ReloadResult) HasErrors() bool {
-	return len(r.RegistrationErrors) > 0 || r.SaveError != nil || r.RollbackSaveError != nil
+	return len(r.RegistrationErrors) > 0 ||
+		len(r.RollbackRegistrationErrors) > 0 ||
+		r.SaveError != nil ||
+		r.RollbackSaveError != nil
 }
 
 // ConfigDir returns the application config directory (%APPDATA%\AutoSwitcher).

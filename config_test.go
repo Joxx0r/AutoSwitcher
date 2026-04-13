@@ -361,11 +361,18 @@ func TestReloadResult_HasErrors(t *testing.T) {
 	}{
 		{"empty", ReloadResult{}, false},
 		{"only registration errors", ReloadResult{RegistrationErrors: []error{errExample}}, true},
+		{"only rollback registration errors", ReloadResult{RollbackRegistrationErrors: []error{errExample}}, true},
 		{"only save error", ReloadResult{SaveError: errExample}, true},
 		{"only rollback save error", ReloadResult{RollbackSaveError: errExample}, true},
 		{"registration + save", ReloadResult{RegistrationErrors: []error{errExample}, SaveError: errExample}, true},
-		{"registration + rollback", ReloadResult{RegistrationErrors: []error{errExample}, RollbackSaveError: errExample}, true},
-		{"all three", ReloadResult{RegistrationErrors: []error{errExample}, SaveError: errExample, RollbackSaveError: errExample}, true},
+		{"registration + rollback save", ReloadResult{RegistrationErrors: []error{errExample}, RollbackSaveError: errExample}, true},
+		{"registration + rollback registration", ReloadResult{RegistrationErrors: []error{errExample}, RollbackRegistrationErrors: []error{errExample}}, true},
+		{"all four", ReloadResult{
+			RegistrationErrors:         []error{errExample},
+			RollbackRegistrationErrors: []error{errExample},
+			SaveError:                  errExample,
+			RollbackSaveError:          errExample,
+		}, true},
 	}
 	for _, tt := range tests {
 		if got := tt.result.HasErrors(); got != tt.want {

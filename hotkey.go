@@ -94,13 +94,20 @@ func (hm *HotkeyManager) RegisterAll(bindings []Binding, silent bool) []error {
 }
 
 // UnregisterAll unregisters all currently registered hotkeys.
+//
+// Note: nextID is intentionally NOT reset. Reusing IDs across an
+// unregister/re-register cycle is a stale-message hazard — a WM_HOTKEY
+// posted to the message queue before UnregisterAll, but dispatched after
+// the next RegisterAll, would deliver to whatever binding now owns that
+// reused ID. Keeping nextID monotonic eliminates that race entirely.
+// int32 has 2^31 IDs; even one reload per second this would take 68 years
+// to wrap.
 func (hm *HotkeyManager) UnregisterAll() {
 	for id := range hm.bindings {
 		_, _, _ = procUnregisterHotKey.Call(hm.hwnd, uintptr(id))
 	}
 	hm.bindings = make(map[int32]*Binding)
 	hm.cycleState = make(map[string]cycleInfo)
-	hm.nextID = 1
 	log.Println("Unregistered all hotkeys")
 }
 

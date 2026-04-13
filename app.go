@@ -127,12 +127,12 @@ func (a *App) Reload(newBindings []Binding) ReloadResult {
 	prevBindings := cloneBindings(a.config.Bindings)
 
 	// Persist first. If this fails, the running app keeps its previous
-	// hotkeys and the disk file is unchanged.
+	// hotkeys and the disk file is unchanged. The dialog's MsgBox is the
+	// primary surface for this error — no duplicate balloon here.
 	trial := *a.config
 	trial.Bindings = cloned
 	if err := SaveConfig(a.configPath, &trial); err != nil {
 		log.Printf("Reload: save failed, live state unchanged: %v", err)
-		a.tray.ShowBalloon("AutoSwitcher", "Failed to save configuration")
 		return ReloadResult{SaveError: err}
 	}
 
@@ -151,12 +151,13 @@ func (a *App) Reload(newBindings []Binding) ReloadResult {
 		a.hotkeys.UnregisterAll()
 		a.config.Bindings = prevBindings
 		if a.enabled {
-			// Best-effort re-register old bindings. If this fails (e.g.
-			// another app grabbed a hotkey in the meantime), we log it
-			// but still report the original errors as the user-visible
-			// failure — the user's actionable info is the original.
+			// Re-register old bindings. If this fails (e.g. another app
+			// grabbed a hotkey in the meantime), capture the errors in the
+			// result so the dialog can warn the user that the rollback
+			// itself was incomplete and live state is degraded.
 			if rollbackErrs := a.hotkeys.RegisterAll(a.config.Bindings, true); len(rollbackErrs) > 0 {
 				log.Printf("Reload: rollback re-register hit %d error(s)", len(rollbackErrs))
+				result.RollbackRegistrationErrors = rollbackErrs
 			}
 		}
 		// Restore disk file. If this fails, capture it in result so the
@@ -168,34 +169,28 @@ func (a *App) Reload(newBindings []Binding) ReloadResult {
 			log.Printf("Reload: rollback save failed: %v", err)
 			result.RollbackSaveError = err
 		}
-		a.tray.ShowBalloon("AutoSwitcher", rollbackSummary(result))
+		// Failure path: the dialog's MsgBox is the primary surface and
+		// carries actionable detail. No duplicate tray balloon.
 		return result
 	}
 
+	// Success path. Only the success balloon fires here — failure paths
+	// surface via the dialog MsgBox + the rollback balloon, never both.
 	a.tray.ShowBalloon("AutoSwitcher", reloadSummary(len(a.config.Bindings), a.enabled, result))
 	log.Printf("Config reloaded with %d bindings (enabled=%v)", len(a.config.Bindings), a.enabled)
 	return result
 }
 
-// rollbackSummary builds the tray balloon text for a Reload that rolled
-// back. The "active" count from reloadSummary is meaningless here because
-// the failed candidate set's error count doesn't apply to the restored set
-// — so this path uses a dedicated message instead.
-func rollbackSummary(result ReloadResult) string {
-	parts := []string{fmt.Sprintf("Reload failed (%d registration error(s))", len(result.RegistrationErrors))}
-	if result.RollbackSaveError != nil {
-		parts = append(parts, "rollback save failed — disk may be inconsistent")
-	} else {
-		parts = append(parts, "prior state restored")
-	}
-	return strings.Join(parts, ", ")
-}
 
-// reloadSummary builds the one-line tray balloon text for a Reload result.
-// Pure function — exported (lowercase) for testing.
+// reloadSummary builds the one-line tray balloon text for a successful
+// Reload. Pure function for testability. Failure paths don't go through
+// this helper — they surface via the dialog's MsgBox.
 func reloadSummary(total int, enabled bool, result ReloadResult) string {
 	if !enabled {
-		return fmt.Sprintf("%d bindings saved (hotkeys disabled)", total)
+		// Hotkeys are off — nothing has been registered, so we can't claim
+		// they're "active" or that there are no conflicts. Conflicts will
+		// only be detected when the user re-enables hotkeys.
+		return fmt.Sprintf("%d bindings saved (hotkeys disabled — conflicts will be checked on enable)", total)
 	}
 	active := total - len(result.RegistrationErrors)
 	parts := []string{fmt.Sprintf("%d hotkeys active", active)}
