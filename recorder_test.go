@@ -331,6 +331,112 @@ func TestRecorderFocusLossWithMissedRelease_RegainResyncs(t *testing.T) {
 	}
 }
 
+func TestRouteHookEvent_BackgroundedModifier_TracksAndPassesThrough(t *testing.T) {
+	s := &RecorderState{}
+
+	suppress, action := s.RouteHookEvent(0xA2, true, false, true) // Ctrl down, !foreground
+
+	if suppress {
+		t.Error("background event must not be suppressed")
+	}
+	if action != RecorderSuppress {
+		t.Errorf("background event action = %d, want RecorderSuppress (no UI work)", action)
+	}
+	if s.HeldModifiers != modControl {
+		t.Errorf("HeldModifiers = 0x%X, want 0x%X (background tracking)", s.HeldModifiers, modControl)
+	}
+}
+
+func TestRouteHookEvent_BackgroundedNonModifier_NoStateChange(t *testing.T) {
+	s := &RecorderState{HeldModifiers: modShift}
+
+	suppress, action := s.RouteHookEvent(0x41, true, false, true) // 'A' down, !foreground
+
+	if suppress {
+		t.Error("background non-modifier must not be suppressed")
+	}
+	if action != RecorderSuppress {
+		t.Errorf("action = %d, want RecorderSuppress", action)
+	}
+	if s.HeldModifiers != modShift {
+		t.Errorf("HeldModifiers mutated: 0x%X, want 0x%X", s.HeldModifiers, modShift)
+	}
+}
+
+func TestRouteHookEvent_NotReady_SuppressesWithoutMutation(t *testing.T) {
+	s := &RecorderState{}
+
+	suppress, action := s.RouteHookEvent(0xA2, true, true, false) // foreground but !ready
+
+	if !suppress {
+		t.Error("foreground !ready must be suppressed")
+	}
+	if action != RecorderSuppress {
+		t.Errorf("action = %d, want RecorderSuppress", action)
+	}
+	if s.HeldModifiers != 0 {
+		t.Errorf("HeldModifiers mutated while !ready: 0x%X", s.HeldModifiers)
+	}
+}
+
+func TestRouteHookEvent_ForegroundReady_ModifierDown_UpdatesLabel(t *testing.T) {
+	s := &RecorderState{}
+
+	suppress, action := s.RouteHookEvent(0xA2, true, true, true) // Ctrl down, foreground, ready
+
+	if !suppress {
+		t.Error("foreground modifier down must be suppressed")
+	}
+	if action != RecorderUpdateLabel {
+		t.Errorf("action = %d, want RecorderUpdateLabel", action)
+	}
+	if s.HeldModifiers != modControl {
+		t.Errorf("HeldModifiers = 0x%X, want 0x%X", s.HeldModifiers, modControl)
+	}
+}
+
+func TestRouteHookEvent_ForegroundReady_AcceptsHotkey(t *testing.T) {
+	s := &RecorderState{HeldModifiers: modControl}
+
+	suppress, action := s.RouteHookEvent(0x74, true, true, true) // F5 down with Ctrl held
+
+	if !suppress {
+		t.Error("foreground accept must be suppressed")
+	}
+	if action != RecorderAccept {
+		t.Errorf("action = %d, want RecorderAccept", action)
+	}
+	if s.CapturedKey != 0x74 || s.CapturedMods != modControl {
+		t.Errorf("captured: key=0x%X mods=0x%X, want 0x74 / 0x%X", s.CapturedKey, s.CapturedMods, modControl)
+	}
+}
+
+func TestRouteHookEvent_ForegroundReady_RejectsBareLetter(t *testing.T) {
+	s := &RecorderState{}
+
+	suppress, action := s.RouteHookEvent(0x41, true, true, true) // 'A' down, no modifier
+
+	if !suppress {
+		t.Error("foreground rejection must still be suppressed (consumed by recorder)")
+	}
+	if action != RecorderNeedModifier {
+		t.Errorf("action = %d, want RecorderNeedModifier", action)
+	}
+}
+
+func TestRouteHookEvent_ForegroundReady_BareEscapeCancels(t *testing.T) {
+	s := &RecorderState{}
+
+	suppress, action := s.RouteHookEvent(0x1B, true, true, true)
+
+	if !suppress {
+		t.Error("foreground cancel must be suppressed")
+	}
+	if action != RecorderCancel {
+		t.Errorf("action = %d, want RecorderCancel", action)
+	}
+}
+
 func TestFocusTracker_DeactivateActivateRunsResync(t *testing.T) {
 	// Codex scenario: focus is lost without any background hook activity
 	// (e.g. secure desktop transition consumes the Ctrl up). FocusTracker

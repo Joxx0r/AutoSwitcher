@@ -227,6 +227,9 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 	// transitions the LL hook can't observe (secure desktop, session switch).
 	// Activate/Deactivate are wired to dlg.Activating/Deactivating below so
 	// focus changes are detected independently of keyboard events.
+	// HasFocus starts true: the dialog is the foreground window the moment
+	// it's shown, so the very first Activate is a no-op and resync only
+	// fires after a genuine Deactivate.
 	focus := &FocusTracker{
 		State:    &state,
 		Snapshot: getHeldModifiers,
@@ -238,22 +241,12 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 		HasFocus: true,
 	}
 
-	// hookCB delegates to the pure RecorderState.ProcessKeyEvent and posts
-	// UI work to the Walk message loop via dlg.Synchronize. When the dialog
-	// isn't the foreground window we still update HeldModifiers via
-	// BackgroundKeyEvent so the tracked state never goes stale across focus
-	// loss, but we don't capture or suppress — keys flow through to the real
-	// foreground app.
+	// hookCB delegates routing to RecorderState.RouteHookEvent (pure logic)
+	// and applies the resulting action to the Walk UI via dlg.Synchronize.
+	// All foreground/background/ready branching lives in the pure helper so
+	// it can be unit-tested directly.
 	hookCB := func(vkCode uint32, isKeyDown bool, isForeground bool) bool {
-		if !isForeground {
-			state.BackgroundKeyEvent(vkCode, isKeyDown)
-			return false
-		}
-		if !ready {
-			return true // suppress keys before dialog is ready
-		}
-
-		action := state.ProcessKeyEvent(vkCode, isKeyDown)
+		suppress, action := state.RouteHookEvent(vkCode, isKeyDown, isForeground, ready)
 		switch action {
 		case RecorderUpdateLabel:
 			dlg.Synchronize(func() { updateLabel() })
@@ -270,7 +263,7 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 				setLabel("Hold a modifier (Ctrl, Alt, Win, Shift) first")
 			})
 		}
-		return true
+		return suppress
 	}
 
 	var hookInstalled bool

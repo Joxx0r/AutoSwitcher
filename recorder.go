@@ -95,6 +95,31 @@ func (s *RecorderState) ResyncFromSnapshot(snapshot uint32) {
 	s.HeldModifiers = snapshot
 }
 
+// RouteHookEvent decides what the recorder should do with a key event
+// arriving from the system-wide LL keyboard hook. It owns the
+// background/foreground/ready branching so the GUI layer only has to
+// apply the returned action.
+//
+// suppress is what the LowLevelKeyboardProc should return: false means
+// "let the key flow through to the active app" (always false when
+// backgrounded), true means "swallow it" (foreground events the recorder
+// consumes, including the not-ready window before the dialog finishes
+// wiring up).
+//
+// action is the UI-side effect to apply. RecorderSuppress here means
+// "no UI work needed" — used for background events, key-up events that
+// aren't modifiers, and events processed while !ready.
+func (s *RecorderState) RouteHookEvent(vkCode uint32, isKeyDown, isForeground, ready bool) (suppress bool, action RecorderAction) {
+	if !isForeground {
+		s.BackgroundKeyEvent(vkCode, isKeyDown)
+		return false, RecorderSuppress
+	}
+	if !ready {
+		return true, RecorderSuppress
+	}
+	return true, s.ProcessKeyEvent(vkCode, isKeyDown)
+}
+
 // FocusTracker observes the recorder dialog's activation state and runs a
 // resync on focus regain. Focus loss must be detected independently of
 // keyboard events because the LL hook can't observe events during secure
@@ -102,6 +127,10 @@ func (s *RecorderState) ResyncFromSnapshot(snapshot uint32) {
 // from the dialog's WM_ACTIVATE-backed events instead. Activate/Deactivate
 // are expected to run on a single thread (the GUI thread) so the type is
 // not safe for concurrent use.
+//
+// HasFocus should be initialized to true: the dialog is the foreground
+// window the moment it's shown, so the very first Activate is a no-op and
+// resync only kicks in after a real Deactivate.
 type FocusTracker struct {
 	State    *RecorderState
 	Snapshot func() uint32
