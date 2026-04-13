@@ -1,6 +1,6 @@
 //go:build windows
 
-//go:generate go-winres make
+//go:generate go tool go-winres make
 
 package main
 
