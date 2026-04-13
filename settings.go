@@ -66,7 +66,10 @@ func (m *BindingModel) Value(row, col int) interface{} {
 }
 
 // ShowSettingsWindow displays the settings dialog with binding management.
-func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Binding), onCreated func(hwnd uintptr)) {
+// onSave is called when the user clicks Apply or Save & Close; it should
+// persist the bindings and return any per-binding errors (e.g. conflicts)
+// so the dialog can surface them without closing.
+func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Binding) []error, onCreated func(hwnd uintptr)) {
 	working := make([]Binding, len(bindings))
 	copy(working, bindings)
 
@@ -77,6 +80,17 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 	refreshTable := func() {
 		model.updateFrom(working)
 		model.PublishRowsReset()
+	}
+
+	reportErrors := func(errs []error) {
+		if len(errs) == 0 {
+			return
+		}
+		msg := "The following bindings could not be registered:\n\n"
+		for _, e := range errs {
+			msg += "  • " + e.Error() + "\n"
+		}
+		walk.MsgBox(dlg, "Hotkey Conflicts", msg, walk.MsgBoxIconWarning)
 	}
 
 	_, _ = decl.Dialog{
@@ -172,9 +186,15 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 					},
 					decl.HSpacer{},
 					decl.PushButton{
-						Text: "Save & Close",
+						Text: "Apply",
 						OnClicked: func() {
-							onSave(working)
+							reportErrors(onSave(working))
+						},
+					},
+					decl.PushButton{
+						Text: "Save && Close",
+						OnClicked: func() {
+							reportErrors(onSave(working))
 							dlg.Accept()
 						},
 					},

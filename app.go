@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"syscall"
 	"unsafe"
@@ -83,7 +84,7 @@ func (a *App) Run() error {
 
 	// Register hotkeys
 	a.hotkeys = NewHotkeyManager(uintptr(a.mw.Handle()), a.tray.ShowBalloon)
-	a.hotkeys.RegisterAll(a.config.Bindings)
+	a.hotkeys.RegisterAll(a.config.Bindings, false)
 
 	// Reconcile autostart: make config authoritative over Task Scheduler state
 	taskExists := IsAutostartEnabled()
@@ -103,24 +104,33 @@ func (a *App) Run() error {
 }
 
 // Reload unregisters all hotkeys, updates config, re-registers, and saves.
-func (a *App) Reload(newBindings []Binding) {
+// Returns any registration errors so callers can surface them inline.
+func (a *App) Reload(newBindings []Binding) []error {
 	a.hotkeys.UnregisterAll()
 	a.config.Bindings = newBindings
+	var errs []error
 	if a.enabled {
-		a.hotkeys.RegisterAll(a.config.Bindings)
+		errs = a.hotkeys.RegisterAll(a.config.Bindings, true)
 	}
 	if err := SaveConfig(a.configPath, a.config); err != nil {
 		log.Printf("Error saving config: %v", err)
 		a.tray.ShowBalloon("Config Error", "Failed to save configuration")
 	}
-	log.Printf("Config reloaded with %d bindings", len(a.config.Bindings))
+	active := len(a.config.Bindings) - len(errs)
+	if len(errs) == 0 {
+		a.tray.ShowBalloon("AutoSwitcher", fmt.Sprintf("%d hotkeys active", active))
+	} else {
+		a.tray.ShowBalloon("AutoSwitcher", fmt.Sprintf("%d active, %d conflict(s)", active, len(errs)))
+	}
+	log.Printf("Config reloaded with %d bindings (%d errors)", len(a.config.Bindings), len(errs))
+	return errs
 }
 
 // SetEnabled enables or disables all hotkeys.
 func (a *App) SetEnabled(enabled bool) {
 	a.enabled = enabled
 	if enabled {
-		a.hotkeys.RegisterAll(a.config.Bindings)
+		a.hotkeys.RegisterAll(a.config.Bindings, false)
 		log.Println("Hotkeys enabled")
 	} else {
 		a.hotkeys.UnregisterAll()
@@ -138,8 +148,10 @@ func (a *App) ShowSettings() {
 		return
 	}
 	a.settingsOpen = true
-	ShowSettingsWindow(a.mw, a.config.Bindings, func(bindings []Binding) {
-		a.Reload(bindings)
+	// Pass nil as the owner so Walk's WM_CLOSE handler doesn't
+	// SetWindowPos(owner, SWP_SHOWWINDOW) on our hidden message-sink window.
+	ShowSettingsWindow(nil, a.config.Bindings, func(bindings []Binding) []error {
+		return a.Reload(bindings)
 	}, func(hwnd uintptr) {
 		a.settingsDlg = hwnd
 	})

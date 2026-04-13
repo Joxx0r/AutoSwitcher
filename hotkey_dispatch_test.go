@@ -250,3 +250,25 @@ func TestHandleHotkey_FocusFailure(t *testing.T) {
 		t.Error("expected non-empty balloon message")
 	}
 }
+
+func TestHotkeyManager_UnregisterAllResetsState(t *testing.T) {
+	hm := NewHotkeyManager(0, nil)
+
+	// Simulate post-RegisterAll state without actually calling Win32.
+	hm.bindings[1] = &Binding{Name: "a"}
+	hm.bindings[2] = &Binding{Name: "b"}
+	hm.nextID = 42
+	hm.cycleState["a"] = cycleInfo{lastHWND: 7}
+
+	hm.UnregisterAll()
+
+	if len(hm.bindings) != 0 {
+		t.Errorf("bindings not cleared: %d entries", len(hm.bindings))
+	}
+	if len(hm.cycleState) != 0 {
+		t.Errorf("cycleState not cleared: %d entries", len(hm.cycleState))
+	}
+	if hm.nextID != 1 {
+		t.Errorf("nextID not reset: got %d, want 1", hm.nextID)
+	}
+}
