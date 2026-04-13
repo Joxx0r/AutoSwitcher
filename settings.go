@@ -66,9 +66,14 @@ func (m *BindingModel) Value(row, col int) interface{} {
 }
 
 // ShowSettingsWindow displays the settings dialog with binding management.
-func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Binding), onCreated func(hwnd uintptr)) {
-	working := make([]Binding, len(bindings))
-	copy(working, bindings)
+// onSave is called when the user clicks Apply or Save & Close; it should
+// persist the bindings and return a ReloadResult so the dialog can surface
+// any registration or save failures without closing.
+func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Binding) ReloadResult, onCreated func(hwnd uintptr)) {
+	// Deep clone so the dialog can mutate working freely without ever
+	// touching live state — Reload also clones again at commit time, but
+	// being explicit at dialog open makes the isolation guarantee obvious.
+	working := cloneBindings(bindings)
 
 	var dlg *walk.Dialog
 	var tv *walk.TableView
@@ -77,6 +82,48 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 	refreshTable := func() {
 		model.updateFrom(working)
 		model.PublishRowsReset()
+	}
+
+	reportResult := func(result ReloadResult) {
+		if !result.HasErrors() {
+			return
+		}
+		msg := ""
+		if len(result.RegistrationErrors) > 0 {
+			msg += "The following bindings could not be registered. " +
+				"Previous settings have been restored — fix the conflicts and click Apply to retry:\n\n"
+			for _, e := range result.RegistrationErrors {
+				msg += "  • " + e.Error() + "\n"
+			}
+		}
+		if len(result.RollbackRegistrationErrors) > 0 {
+			if msg != "" {
+				msg += "\n"
+			}
+			msg += "WARNING: Some previous bindings could not be re-registered during rollback. " +
+				"Live hotkeys are now degraded — these bindings are inactive even though they were " +
+				"working before:\n\n"
+			for _, e := range result.RollbackRegistrationErrors {
+				msg += "  • " + e.Error() + "\n"
+			}
+		}
+		if result.SaveError != nil {
+			if msg != "" {
+				msg += "\n"
+			}
+			msg += "Failed to save configuration:\n  " + result.SaveError.Error()
+		}
+		if result.RollbackSaveError != nil {
+			if msg != "" {
+				msg += "\n"
+			}
+			msg += "WARNING: Failed to restore the previous configuration to disk:\n  " +
+				result.RollbackSaveError.Error() +
+				"\n\nLive hotkeys are correct, but the on-disk config may still hold the rejected " +
+				"settings. The next restart could load the broken state. Re-open settings and Apply " +
+				"the previous (working) bindings to repair the file."
+		}
+		walk.MsgBox(dlg, "Settings Errors", msg, walk.MsgBoxIconWarning)
 	}
 
 	_, _ = decl.Dialog{
@@ -172,9 +219,19 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 					},
 					decl.HSpacer{},
 					decl.PushButton{
-						Text: "Save & Close",
+						Text: "Apply",
 						OnClicked: func() {
-							onSave(working)
+							reportResult(onSave(working))
+						},
+					},
+					decl.PushButton{
+						Text: "Save && Close",
+						OnClicked: func() {
+							result := onSave(working)
+							if result.HasErrors() {
+								reportResult(result)
+								return // keep dialog open so user can fix and retry
+							}
 							dlg.Accept()
 						},
 					},

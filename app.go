@@ -3,7 +3,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -83,7 +85,7 @@ func (a *App) Run() error {
 
 	// Register hotkeys
 	a.hotkeys = NewHotkeyManager(uintptr(a.mw.Handle()), a.tray.ShowBalloon)
-	a.hotkeys.RegisterAll(a.config.Bindings)
+	a.hotkeys.RegisterAll(a.config.Bindings, false)
 
 	// Reconcile autostart: make config authoritative over Task Scheduler state
 	taskExists := IsAutostartEnabled()
@@ -102,25 +104,107 @@ func (a *App) Run() error {
 	return nil
 }
 
-// Reload unregisters all hotkeys, updates config, re-registers, and saves.
-func (a *App) Reload(newBindings []Binding) {
+// Reload atomically applies a new set of bindings: persists to disk, swaps
+// live state, registers new hotkeys. Returns a ReloadResult describing any
+// failure so the caller (the settings dialog) can surface it inline.
+//
+// Transactional semantics:
+//
+//   - SaveConfig runs first. On disk-write failure, NO live state is touched
+//     and the on-disk file is unchanged. Caller gets SaveError and can retry.
+//   - On registration failure (e.g. hotkey conflict, invalid key), the
+//     previous bindings are rolled back: live HotkeyManager is restored,
+//     a.config.Bindings is restored, and the on-disk file is rewritten with
+//     the previous state. The dialog can then stay open and the user can
+//     fix the conflict and retry — exactly the contract the UI implies.
+//
+// The input slice is deep-cloned, so the caller's working copy can keep
+// being mutated without affecting live state.
+func (a *App) Reload(newBindings []Binding) ReloadResult {
+	cloned := cloneBindings(newBindings)
+
+	// Snapshot for rollback.
+	prevBindings := cloneBindings(a.config.Bindings)
+
+	// Persist first. If this fails, the running app keeps its previous
+	// hotkeys and the disk file is unchanged. The dialog's MsgBox is the
+	// primary surface for this error — no duplicate balloon here.
+	trial := *a.config
+	trial.Bindings = cloned
+	if err := SaveConfig(a.configPath, &trial); err != nil {
+		log.Printf("Reload: save failed, live state unchanged: %v", err)
+		return ReloadResult{SaveError: err}
+	}
+
+	// Save succeeded — commit to live state.
 	a.hotkeys.UnregisterAll()
-	a.config.Bindings = newBindings
+	a.config.Bindings = cloned
+	var result ReloadResult
 	if a.enabled {
-		a.hotkeys.RegisterAll(a.config.Bindings)
+		result.RegistrationErrors = a.hotkeys.RegisterAll(a.config.Bindings, true)
 	}
-	if err := SaveConfig(a.configPath, a.config); err != nil {
-		log.Printf("Error saving config: %v", err)
-		a.tray.ShowBalloon("Config Error", "Failed to save configuration")
+
+	// On any registration failure, roll back to the previous state so
+	// the dialog's stay-open semantics are actually a transaction.
+	if len(result.RegistrationErrors) > 0 {
+		log.Printf("Reload: %d registration error(s), rolling back", len(result.RegistrationErrors))
+		a.hotkeys.UnregisterAll()
+		a.config.Bindings = prevBindings
+		if a.enabled {
+			// Re-register old bindings. If this fails (e.g. another app
+			// grabbed a hotkey in the meantime), capture the errors in the
+			// result so the dialog can warn the user that the rollback
+			// itself was incomplete and live state is degraded.
+			if rollbackErrs := a.hotkeys.RegisterAll(a.config.Bindings, true); len(rollbackErrs) > 0 {
+				log.Printf("Reload: rollback re-register hit %d error(s)", len(rollbackErrs))
+				result.RollbackRegistrationErrors = rollbackErrs
+			}
+		}
+		// Restore disk file. If this fails, capture it in result so the
+		// dialog can warn the user that on-disk state is inconsistent
+		// with live state.
+		prevTrial := *a.config
+		prevTrial.Bindings = prevBindings
+		if err := SaveConfig(a.configPath, &prevTrial); err != nil {
+			log.Printf("Reload: rollback save failed: %v", err)
+			result.RollbackSaveError = err
+		}
+		// Failure path: the dialog's MsgBox is the primary surface and
+		// carries actionable detail. No duplicate tray balloon.
+		return result
 	}
-	log.Printf("Config reloaded with %d bindings", len(a.config.Bindings))
+
+	// Success path. Only the success balloon fires here — failure paths
+	// surface via the dialog MsgBox + the rollback balloon, never both.
+	a.tray.ShowBalloon("AutoSwitcher", reloadSummary(len(a.config.Bindings), a.enabled, result))
+	log.Printf("Config reloaded with %d bindings (enabled=%v)", len(a.config.Bindings), a.enabled)
+	return result
+}
+
+
+// reloadSummary builds the one-line tray balloon text for a successful
+// Reload. Pure function for testability. Failure paths don't go through
+// this helper — they surface via the dialog's MsgBox.
+func reloadSummary(total int, enabled bool, result ReloadResult) string {
+	if !enabled {
+		// Hotkeys are off — nothing has been registered, so we can't claim
+		// they're "active" or that there are no conflicts. Conflicts will
+		// only be detected when the user re-enables hotkeys.
+		return fmt.Sprintf("%d bindings saved (hotkeys disabled — conflicts will be checked on enable)", total)
+	}
+	active := total - len(result.RegistrationErrors)
+	parts := []string{fmt.Sprintf("%d hotkeys active", active)}
+	if len(result.RegistrationErrors) > 0 {
+		parts = append(parts, fmt.Sprintf("%d registration error(s)", len(result.RegistrationErrors)))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // SetEnabled enables or disables all hotkeys.
 func (a *App) SetEnabled(enabled bool) {
 	a.enabled = enabled
 	if enabled {
-		a.hotkeys.RegisterAll(a.config.Bindings)
+		a.hotkeys.RegisterAll(a.config.Bindings, false)
 		log.Println("Hotkeys enabled")
 	} else {
 		a.hotkeys.UnregisterAll()
@@ -138,8 +222,10 @@ func (a *App) ShowSettings() {
 		return
 	}
 	a.settingsOpen = true
-	ShowSettingsWindow(a.mw, a.config.Bindings, func(bindings []Binding) {
-		a.Reload(bindings)
+	// Pass nil as the owner so Walk's WM_CLOSE handler doesn't
+	// SetWindowPos(owner, SWP_SHOWWINDOW) on our hidden message-sink window.
+	ShowSettingsWindow(nil, a.config.Bindings, func(bindings []Binding) ReloadResult {
+		return a.Reload(bindings)
 	}, func(hwnd uintptr) {
 		a.settingsDlg = hwnd
 	})

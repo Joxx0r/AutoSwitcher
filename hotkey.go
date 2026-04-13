@@ -54,7 +54,10 @@ func NewHotkeyManager(hwnd uintptr, showBalloon func(title, msg string)) *Hotkey
 
 // RegisterAll registers hotkeys for all bindings. Returns errors for any that fail.
 // Successfully registered hotkeys remain active even if others fail.
-func (hm *HotkeyManager) RegisterAll(bindings []Binding) []error {
+// When silent is true, per-binding balloons are suppressed — the caller is
+// expected to surface errors (e.g. the settings dialog showing a MsgBox +
+// the summary balloon from Reload).
+func (hm *HotkeyManager) RegisterAll(bindings []Binding, silent bool) []error {
 	var errs []error
 	for i := range bindings {
 		b := &bindings[i]
@@ -62,7 +65,7 @@ func (hm *HotkeyManager) RegisterAll(bindings []Binding) []error {
 		if err != nil {
 			errMsg := fmt.Sprintf("Invalid key %q for %s: %v", b.Hotkey.Key, b.Name, err)
 			log.Println(errMsg)
-			if hm.showBalloon != nil {
+			if !silent && hm.showBalloon != nil {
 				hm.showBalloon("Hotkey Error", errMsg)
 			}
 			errs = append(errs, fmt.Errorf("%s", errMsg))
@@ -77,7 +80,7 @@ func (hm *HotkeyManager) RegisterAll(bindings []Binding) []error {
 		if ret == 0 {
 			errMsg := fmt.Sprintf("Hotkey %s is already in use by another application", b.Hotkey.Format())
 			log.Println(errMsg)
-			if hm.showBalloon != nil {
+			if !silent && hm.showBalloon != nil {
 				hm.showBalloon("Hotkey Conflict", errMsg)
 			}
 			errs = append(errs, fmt.Errorf("%s", errMsg))
@@ -91,6 +94,14 @@ func (hm *HotkeyManager) RegisterAll(bindings []Binding) []error {
 }
 
 // UnregisterAll unregisters all currently registered hotkeys.
+//
+// Note: nextID is intentionally NOT reset. Reusing IDs across an
+// unregister/re-register cycle is a stale-message hazard — a WM_HOTKEY
+// posted to the message queue before UnregisterAll, but dispatched after
+// the next RegisterAll, would deliver to whatever binding now owns that
+// reused ID. Keeping nextID monotonic eliminates that race entirely.
+// int32 has 2^31 IDs; even one reload per second this would take 68 years
+// to wrap.
 func (hm *HotkeyManager) UnregisterAll() {
 	for id := range hm.bindings {
 		_, _, _ = procUnregisterHotKey.Call(hm.hwnd, uintptr(id))

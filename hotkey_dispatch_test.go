@@ -250,3 +250,77 @@ func TestHandleHotkey_FocusFailure(t *testing.T) {
 		t.Error("expected non-empty balloon message")
 	}
 }
+
+func TestHotkeyManager_UnregisterAllClearsBindingsAndCycleState(t *testing.T) {
+	hm := NewHotkeyManager(0, nil)
+
+	// Simulate post-RegisterAll state without actually calling Win32.
+	hm.bindings[1] = &Binding{Name: "a"}
+	hm.bindings[2] = &Binding{Name: "b"}
+	hm.nextID = 42
+	hm.cycleState["a"] = cycleInfo{lastHWND: 7}
+
+	hm.UnregisterAll()
+
+	if len(hm.bindings) != 0 {
+		t.Errorf("bindings not cleared: %d entries", len(hm.bindings))
+	}
+	if len(hm.cycleState) != 0 {
+		t.Errorf("cycleState not cleared: %d entries", len(hm.cycleState))
+	}
+	// nextID must NOT be reset — reusing IDs across reload would risk
+	// dispatching a queued WM_HOTKEY message to the wrong binding.
+	if hm.nextID != 42 {
+		t.Errorf("nextID was reset to %d; must stay monotonic to prevent stale message misdispatch", hm.nextID)
+	}
+}
+
+func TestReloadSummary(t *testing.T) {
+	tests := []struct {
+		name    string
+		total   int
+		enabled bool
+		result  ReloadResult
+		want    string
+	}{
+		{
+			name: "enabled all active",
+			total: 5, enabled: true, result: ReloadResult{},
+			want: "5 hotkeys active",
+		},
+		{
+			name: "enabled with registration errors",
+			total: 5, enabled: true,
+			result: ReloadResult{RegistrationErrors: []error{errExample, errExample}},
+			want:   "3 hotkeys active, 2 registration error(s)",
+		},
+		{
+			name: "enabled all failed",
+			total: 3, enabled: true,
+			result: ReloadResult{RegistrationErrors: []error{errExample, errExample, errExample}},
+			want:   "0 hotkeys active, 3 registration error(s)",
+		},
+		{
+			name: "disabled — does not claim active",
+			total: 5, enabled: false, result: ReloadResult{},
+			want: "5 bindings saved (hotkeys disabled — conflicts will be checked on enable)",
+		},
+		{
+			name: "disabled with stale registration errors ignored",
+			total: 5, enabled: false,
+			result: ReloadResult{RegistrationErrors: []error{errExample}},
+			want:   "5 bindings saved (hotkeys disabled — conflicts will be checked on enable)",
+		},
+		{
+			name: "zero bindings enabled",
+			total: 0, enabled: true, result: ReloadResult{},
+			want: "0 hotkeys active",
+		},
+	}
+	for _, tt := range tests {
+		got := reloadSummary(tt.total, tt.enabled, tt.result)
+		if got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
