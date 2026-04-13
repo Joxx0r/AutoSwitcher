@@ -58,6 +58,41 @@ func DefaultConfig() *Config {
 	}
 }
 
+// cloneBindings returns a deep copy of the given bindings, including their
+// nested slice fields. Used when handing off a slice from the settings dialog
+// to App.Reload so subsequent edits in the dialog can't mutate live config.
+func cloneBindings(src []Binding) []Binding {
+	if src == nil {
+		return nil
+	}
+	dst := make([]Binding, len(src))
+	for i, b := range src {
+		dst[i] = b
+		if b.Hotkey.Modifiers != nil {
+			dst[i].Hotkey.Modifiers = append([]string(nil), b.Hotkey.Modifiers...)
+		}
+		if b.LaunchArgs != nil {
+			dst[i].LaunchArgs = append([]string(nil), b.LaunchArgs...)
+		}
+	}
+	return dst
+}
+
+// ReloadResult describes the outcome of an App.Reload call. It distinguishes
+// hotkey registration failures (conflicts, invalid keys) from configuration
+// persistence failures so callers can decide how to surface each — e.g. the
+// settings dialog keeps itself open if either is non-empty.
+type ReloadResult struct {
+	RegistrationErrors []error
+	SaveError          error
+}
+
+// HasErrors reports whether the reload had any failure the caller should
+// surface. Used by the settings dialog to decide whether to stay open.
+func (r ReloadResult) HasErrors() bool {
+	return len(r.RegistrationErrors) > 0 || r.SaveError != nil
+}
+
 // ConfigDir returns the application config directory (%APPDATA%\AutoSwitcher).
 func ConfigDir() (string, error) {
 	appData := os.Getenv("APPDATA")

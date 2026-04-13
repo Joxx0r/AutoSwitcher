@@ -225,3 +225,92 @@ func TestHotkeyDefFormat(t *testing.T) {
 		}
 	}
 }
+
+func TestCloneBindings_Independence(t *testing.T) {
+	// Mutating the result of cloneBindings — including its nested slice
+	// fields — must not affect the source. This is the regression test for
+	// the slice-aliasing bug between settings dialog working state and
+	// App.config.Bindings.
+	src := []Binding{
+		{
+			Name:          "VS Code",
+			Hotkey:        HotkeyDef{Modifiers: []string{"win"}, Key: "1"},
+			ExeName:       "Code.exe",
+			LaunchCommand: "C:\\code.exe",
+			LaunchArgs:    []string{"--new-window"},
+			MultiWindow:   "most_recent",
+		},
+		{
+			Name:        "Term",
+			Hotkey:      HotkeyDef{Modifiers: []string{"ctrl", "alt"}, Key: "T"},
+			ExeName:     "wt.exe",
+			MultiWindow: "cycle",
+		},
+	}
+
+	dst := cloneBindings(src)
+
+	if len(dst) != len(src) {
+		t.Fatalf("len(dst) = %d, want %d", len(dst), len(src))
+	}
+
+	// Mutate dst — top-level fields and nested slices — and verify src
+	// is untouched.
+	dst[0].Name = "MUTATED"
+	dst[0].Hotkey.Modifiers[0] = "alt"
+	dst[0].LaunchArgs[0] = "--evil"
+	dst[1].Hotkey.Modifiers = append(dst[1].Hotkey.Modifiers, "shift")
+
+	if src[0].Name != "VS Code" {
+		t.Errorf("src[0].Name mutated: %q", src[0].Name)
+	}
+	if src[0].Hotkey.Modifiers[0] != "win" {
+		t.Errorf("src[0].Hotkey.Modifiers[0] mutated: %q", src[0].Hotkey.Modifiers[0])
+	}
+	if src[0].LaunchArgs[0] != "--new-window" {
+		t.Errorf("src[0].LaunchArgs[0] mutated: %q", src[0].LaunchArgs[0])
+	}
+	if len(src[1].Hotkey.Modifiers) != 2 {
+		t.Errorf("src[1].Hotkey.Modifiers grew: %v", src[1].Hotkey.Modifiers)
+	}
+}
+
+func TestCloneBindings_Nil(t *testing.T) {
+	if got := cloneBindings(nil); got != nil {
+		t.Errorf("cloneBindings(nil) = %v, want nil", got)
+	}
+}
+
+func TestCloneBindings_Empty(t *testing.T) {
+	got := cloneBindings([]Binding{})
+	if got == nil {
+		t.Error("cloneBindings([]) returned nil")
+	}
+	if len(got) != 0 {
+		t.Errorf("cloneBindings([]) len = %d, want 0", len(got))
+	}
+}
+
+func TestReloadResult_HasErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		result ReloadResult
+		want   bool
+	}{
+		{"empty", ReloadResult{}, false},
+		{"only registration errors", ReloadResult{RegistrationErrors: []error{errExample}}, true},
+		{"only save error", ReloadResult{SaveError: errExample}, true},
+		{"both", ReloadResult{RegistrationErrors: []error{errExample}, SaveError: errExample}, true},
+	}
+	for _, tt := range tests {
+		if got := tt.result.HasErrors(); got != tt.want {
+			t.Errorf("%s: HasErrors() = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+var errExample = &simpleError{"boom"}
+
+type simpleError struct{ msg string }
+
+func (e *simpleError) Error() string { return e.msg }

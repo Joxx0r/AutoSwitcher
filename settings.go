@@ -67,9 +67,9 @@ func (m *BindingModel) Value(row, col int) interface{} {
 
 // ShowSettingsWindow displays the settings dialog with binding management.
 // onSave is called when the user clicks Apply or Save & Close; it should
-// persist the bindings and return any per-binding errors (e.g. conflicts)
-// so the dialog can surface them without closing.
-func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Binding) []error, onCreated func(hwnd uintptr)) {
+// persist the bindings and return a ReloadResult so the dialog can surface
+// any registration or save failures without closing.
+func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Binding) ReloadResult, onCreated func(hwnd uintptr)) {
 	working := make([]Binding, len(bindings))
 	copy(working, bindings)
 
@@ -82,15 +82,24 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 		model.PublishRowsReset()
 	}
 
-	reportErrors := func(errs []error) {
-		if len(errs) == 0 {
+	reportResult := func(result ReloadResult) {
+		if !result.HasErrors() {
 			return
 		}
-		msg := "The following bindings could not be registered:\n\n"
-		for _, e := range errs {
-			msg += "  • " + e.Error() + "\n"
+		msg := ""
+		if len(result.RegistrationErrors) > 0 {
+			msg += "The following bindings could not be registered:\n\n"
+			for _, e := range result.RegistrationErrors {
+				msg += "  • " + e.Error() + "\n"
+			}
 		}
-		walk.MsgBox(dlg, "Hotkey Conflicts", msg, walk.MsgBoxIconWarning)
+		if result.SaveError != nil {
+			if msg != "" {
+				msg += "\n"
+			}
+			msg += "Failed to save configuration:\n  " + result.SaveError.Error()
+		}
+		walk.MsgBox(dlg, "Settings Errors", msg, walk.MsgBoxIconWarning)
 	}
 
 	_, _ = decl.Dialog{
@@ -188,13 +197,17 @@ func ShowSettingsWindow(owner walk.Form, bindings []Binding, onSave func([]Bindi
 					decl.PushButton{
 						Text: "Apply",
 						OnClicked: func() {
-							reportErrors(onSave(working))
+							reportResult(onSave(working))
 						},
 					},
 					decl.PushButton{
 						Text: "Save && Close",
 						OnClicked: func() {
-							reportErrors(onSave(working))
+							result := onSave(working)
+							if result.HasErrors() {
+								reportResult(result)
+								return // keep dialog open so user can fix and retry
+							}
 							dlg.Accept()
 						},
 					},

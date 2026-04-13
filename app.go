@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -103,27 +104,39 @@ func (a *App) Run() error {
 	return nil
 }
 
-// Reload unregisters all hotkeys, updates config, re-registers, and saves.
-// Returns any registration errors so callers can surface them inline.
-func (a *App) Reload(newBindings []Binding) []error {
+// Reload unregisters all hotkeys, updates config, re-registers, and persists.
+// Returns a ReloadResult describing any registration or save failures so the
+// caller (typically the settings dialog) can surface them inline. The input
+// slice is deep-cloned before being stored in a.config, so the caller can
+// continue mutating its own working copy without affecting live state.
+func (a *App) Reload(newBindings []Binding) ReloadResult {
 	a.hotkeys.UnregisterAll()
-	a.config.Bindings = newBindings
-	var errs []error
+	a.config.Bindings = cloneBindings(newBindings)
+	var result ReloadResult
 	if a.enabled {
-		errs = a.hotkeys.RegisterAll(a.config.Bindings, true)
+		result.RegistrationErrors = a.hotkeys.RegisterAll(a.config.Bindings, true)
 	}
 	if err := SaveConfig(a.configPath, a.config); err != nil {
 		log.Printf("Error saving config: %v", err)
-		a.tray.ShowBalloon("Config Error", "Failed to save configuration")
+		result.SaveError = err
 	}
-	active := len(a.config.Bindings) - len(errs)
-	if len(errs) == 0 {
-		a.tray.ShowBalloon("AutoSwitcher", fmt.Sprintf("%d hotkeys active", active))
-	} else {
-		a.tray.ShowBalloon("AutoSwitcher", fmt.Sprintf("%d active, %d conflict(s)", active, len(errs)))
+	a.tray.ShowBalloon("AutoSwitcher", reloadSummary(len(a.config.Bindings), result))
+	log.Printf("Config reloaded with %d bindings (%d registration errors, save error: %v)",
+		len(a.config.Bindings), len(result.RegistrationErrors), result.SaveError)
+	return result
+}
+
+// reloadSummary builds the one-line tray balloon text for a Reload result.
+func reloadSummary(total int, result ReloadResult) string {
+	active := total - len(result.RegistrationErrors)
+	parts := []string{fmt.Sprintf("%d hotkeys active", active)}
+	if len(result.RegistrationErrors) > 0 {
+		parts = append(parts, fmt.Sprintf("%d conflict(s)", len(result.RegistrationErrors)))
 	}
-	log.Printf("Config reloaded with %d bindings (%d errors)", len(a.config.Bindings), len(errs))
-	return errs
+	if result.SaveError != nil {
+		parts = append(parts, "save failed")
+	}
+	return strings.Join(parts, ", ")
 }
 
 // SetEnabled enables or disables all hotkeys.
@@ -150,7 +163,7 @@ func (a *App) ShowSettings() {
 	a.settingsOpen = true
 	// Pass nil as the owner so Walk's WM_CLOSE handler doesn't
 	// SetWindowPos(owner, SWP_SHOWWINDOW) on our hidden message-sink window.
-	ShowSettingsWindow(nil, a.config.Bindings, func(bindings []Binding) []error {
+	ShowSettingsWindow(nil, a.config.Bindings, func(bindings []Binding) ReloadResult {
 		return a.Reload(bindings)
 	}, func(hwnd uintptr) {
 		a.settingsDlg = hwnd
