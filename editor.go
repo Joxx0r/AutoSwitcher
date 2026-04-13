@@ -205,9 +205,7 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 	var statusLabel *walk.Label
 	var ready bool // set after dialog widgets are assigned
 
-	state := RecorderState{
-		ResyncModifiers: getHeldModifiers,
-	}
+	state := RecorderState{}
 
 	setLabel := func(text string) {
 		if statusLabel != nil {
@@ -225,14 +223,30 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 		setLabel(text)
 	}
 
-	// hookCB delegates to the pure RecorderState.ProcessKeyEvent and posts
-	// UI work to the Walk message loop via dlg.Synchronize.
-	hookCB := func(vkCode uint32, isKeyDown bool) bool {
-		if !ready {
-			return true // suppress keys before dialog is ready
-		}
+	// focus runs a resync on activation so we recover from modifier
+	// transitions the LL hook can't observe (secure desktop, session switch).
+	// Activate/Deactivate are wired to dlg.Activating/Deactivating below so
+	// focus changes are detected independently of keyboard events.
+	// HasFocus starts true: the dialog is the foreground window the moment
+	// it's shown, so the very first Activate is a no-op and resync only
+	// fires after a genuine Deactivate.
+	focus := &FocusTracker{
+		State:    &state,
+		Snapshot: getHeldModifiers,
+		OnResync: func() {
+			if ready {
+				updateLabel()
+			}
+		},
+		HasFocus: true,
+	}
 
-		action := state.ProcessKeyEvent(vkCode, isKeyDown)
+	// hookCB delegates routing to RecorderState.RouteHookEvent (pure logic)
+	// and applies the resulting action to the Walk UI via dlg.Synchronize.
+	// All foreground/background/ready branching lives in the pure helper so
+	// it can be unit-tested directly.
+	hookCB := func(vkCode uint32, isKeyDown bool, isForeground bool) bool {
+		suppress, action := state.RouteHookEvent(vkCode, isKeyDown, isForeground, ready)
 		switch action {
 		case RecorderUpdateLabel:
 			dlg.Synchronize(func() { updateLabel() })
@@ -249,7 +263,7 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 				setLabel("Hold a modifier (Ctrl, Alt, Win, Shift) first")
 			})
 		}
-		return true
+		return suppress
 	}
 
 	var hookInstalled bool
@@ -269,6 +283,8 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 					return
 				}
 				hookInstalled = true
+				dlg.Deactivating().Attach(func() { focus.Deactivate() })
+				dlg.Activating().Attach(func() { focus.Activate() })
 				// Seed modifier state from currently held keys so modifiers
 				// already pressed when the dialog opens are recognized
 				state.HeldModifiers = getHeldModifiers()
