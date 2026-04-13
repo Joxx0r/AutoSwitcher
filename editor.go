@@ -223,11 +223,20 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 		setLabel(text)
 	}
 
-	// wasForeground tracks the dialog's previous foreground status so we can
-	// detect background→foreground transitions and resync from the actual
-	// keyboard state (covers events the LL hook can't see, e.g. modifier
-	// releases during a secure desktop or session switch).
-	wasForeground := true
+	// focus runs a resync on activation so we recover from modifier
+	// transitions the LL hook can't observe (secure desktop, session switch).
+	// Activate/Deactivate are wired to dlg.Activating/Deactivating below so
+	// focus changes are detected independently of keyboard events.
+	focus := &FocusTracker{
+		State:    &state,
+		Snapshot: getHeldModifiers,
+		OnResync: func() {
+			if ready {
+				updateLabel()
+			}
+		},
+		HasFocus: true,
+	}
 
 	// hookCB delegates to the pure RecorderState.ProcessKeyEvent and posts
 	// UI work to the Walk message loop via dlg.Synchronize. When the dialog
@@ -238,20 +247,8 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 	hookCB := func(vkCode uint32, isKeyDown bool, isForeground bool) bool {
 		if !isForeground {
 			state.BackgroundKeyEvent(vkCode, isKeyDown)
-			wasForeground = false
 			return false
 		}
-
-		// Foreground: if we just regained focus, reconcile against the
-		// physical keyboard state to recover from any missed transitions.
-		if !wasForeground {
-			state.ResyncFromSnapshot(getHeldModifiers())
-			wasForeground = true
-			if ready {
-				dlg.Synchronize(func() { updateLabel() })
-			}
-		}
-
 		if !ready {
 			return true // suppress keys before dialog is ready
 		}
@@ -293,6 +290,8 @@ func recordHotkeyByKeypress(owner walk.Form) (modifiers []string, key string, ok
 					return
 				}
 				hookInstalled = true
+				dlg.Deactivating().Attach(func() { focus.Deactivate() })
+				dlg.Activating().Attach(func() { focus.Activate() })
 				// Seed modifier state from currently held keys so modifiers
 				// already pressed when the dialog opens are recognized
 				state.HeldModifiers = getHeldModifiers()

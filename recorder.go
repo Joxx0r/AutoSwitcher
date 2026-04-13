@@ -94,3 +94,39 @@ func (s *RecorderState) BackgroundKeyEvent(vkCode uint32, isKeyDown bool) {
 func (s *RecorderState) ResyncFromSnapshot(snapshot uint32) {
 	s.HeldModifiers = snapshot
 }
+
+// FocusTracker observes the recorder dialog's activation state and runs a
+// resync on focus regain. Focus loss must be detected independently of
+// keyboard events because the LL hook can't observe events during secure
+// desktop transitions, lock screens, or session switches — so we drive this
+// from the dialog's WM_ACTIVATE-backed events instead. Activate/Deactivate
+// are expected to run on a single thread (the GUI thread) so the type is
+// not safe for concurrent use.
+type FocusTracker struct {
+	State    *RecorderState
+	Snapshot func() uint32
+	OnResync func()
+	HasFocus bool
+}
+
+// Deactivate marks the dialog as no longer the foreground window.
+func (f *FocusTracker) Deactivate() {
+	f.HasFocus = false
+}
+
+// Activate marks the dialog as the foreground window. If we were previously
+// inactive, reconcile HeldModifiers against the physical keyboard state and
+// fire OnResync so the UI can refresh.
+func (f *FocusTracker) Activate() {
+	if f.HasFocus {
+		return
+	}
+	f.HasFocus = true
+	if f.State == nil || f.Snapshot == nil {
+		return
+	}
+	f.State.ResyncFromSnapshot(f.Snapshot())
+	if f.OnResync != nil {
+		f.OnResync()
+	}
+}

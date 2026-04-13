@@ -330,3 +330,154 @@ func TestRecorderFocusLossWithMissedRelease_RegainResyncs(t *testing.T) {
 		t.Errorf("bare A after missed-release resync: got %d, want RecorderNeedModifier", action)
 	}
 }
+
+func TestFocusTracker_DeactivateActivateRunsResync(t *testing.T) {
+	// Codex scenario: focus is lost without any background hook activity
+	// (e.g. secure desktop transition consumes the Ctrl up). FocusTracker
+	// must run the resync on Activate even though no keyboard events flowed
+	// while backgrounded.
+	state := &RecorderState{HeldModifiers: modControl}
+	resyncCalls := 0
+	snapshotCalls := 0
+	tracker := &FocusTracker{
+		State: state,
+		Snapshot: func() uint32 {
+			snapshotCalls++
+			return 0 // physical state: nothing held
+		},
+		OnResync: func() { resyncCalls++ },
+		HasFocus: true,
+	}
+
+	tracker.Deactivate()
+	if tracker.HasFocus {
+		t.Error("Deactivate did not clear HasFocus")
+	}
+	if snapshotCalls != 0 || resyncCalls != 0 {
+		t.Errorf("Deactivate triggered resync: snapshot=%d, onResync=%d", snapshotCalls, resyncCalls)
+	}
+
+	tracker.Activate()
+	if !tracker.HasFocus {
+		t.Error("Activate did not set HasFocus")
+	}
+	if snapshotCalls != 1 {
+		t.Errorf("snapshot calls = %d, want 1", snapshotCalls)
+	}
+	if resyncCalls != 1 {
+		t.Errorf("OnResync calls = %d, want 1", resyncCalls)
+	}
+	if state.HeldModifiers != 0 {
+		t.Errorf("HeldModifiers after resync = 0x%X, want 0", state.HeldModifiers)
+	}
+}
+
+func TestFocusTracker_ActivateWhenAlreadyActiveIsNoOp(t *testing.T) {
+	// Activate must not run the resync if we never lost focus — no
+	// snapshot, no callback, no state mutation.
+	state := &RecorderState{HeldModifiers: modControl}
+	snapshotCalls := 0
+	resyncCalls := 0
+	tracker := &FocusTracker{
+		State:    state,
+		Snapshot: func() uint32 { snapshotCalls++; return 0 },
+		OnResync: func() { resyncCalls++ },
+		HasFocus: true,
+	}
+
+	tracker.Activate()
+
+	if snapshotCalls != 0 {
+		t.Errorf("snapshot calls = %d, want 0 (already active)", snapshotCalls)
+	}
+	if resyncCalls != 0 {
+		t.Errorf("OnResync calls = %d, want 0", resyncCalls)
+	}
+	if state.HeldModifiers != modControl {
+		t.Errorf("HeldModifiers mutated unexpectedly: 0x%X", state.HeldModifiers)
+	}
+}
+
+func TestFocusTracker_ActivatePreservesStillHeldModifiers(t *testing.T) {
+	// If the snapshot reports modifiers are still held at focus regain,
+	// HeldModifiers must reflect that — not be cleared.
+	state := &RecorderState{HeldModifiers: modControl}
+	tracker := &FocusTracker{
+		State:    state,
+		Snapshot: func() uint32 { return modShift | modAlt },
+		HasFocus: true,
+	}
+
+	tracker.Deactivate()
+	tracker.Activate()
+
+	if state.HeldModifiers != modShift|modAlt {
+		t.Errorf("HeldModifiers = 0x%X, want 0x%X", state.HeldModifiers, modShift|modAlt)
+	}
+}
+
+func TestFocusTracker_RepeatedDeactivateActivateCycles(t *testing.T) {
+	// Multiple lose/regain cycles must each trigger exactly one resync.
+	state := &RecorderState{}
+	resyncCalls := 0
+	currentSnapshot := uint32(0)
+	tracker := &FocusTracker{
+		State:    state,
+		Snapshot: func() uint32 { return currentSnapshot },
+		OnResync: func() { resyncCalls++ },
+		HasFocus: true,
+	}
+
+	currentSnapshot = modControl
+	tracker.Deactivate()
+	tracker.Activate()
+	if state.HeldModifiers != modControl || resyncCalls != 1 {
+		t.Errorf("cycle 1: HeldModifiers=0x%X resync=%d", state.HeldModifiers, resyncCalls)
+	}
+
+	currentSnapshot = modShift
+	tracker.Deactivate()
+	tracker.Activate()
+	if state.HeldModifiers != modShift || resyncCalls != 2 {
+		t.Errorf("cycle 2: HeldModifiers=0x%X resync=%d", state.HeldModifiers, resyncCalls)
+	}
+
+	currentSnapshot = 0
+	tracker.Deactivate()
+	tracker.Activate()
+	if state.HeldModifiers != 0 || resyncCalls != 3 {
+		t.Errorf("cycle 3: HeldModifiers=0x%X resync=%d", state.HeldModifiers, resyncCalls)
+	}
+}
+
+func TestFocusTracker_FocusLossNoBackgroundEvents_StaleStateRecovered(t *testing.T) {
+	// Codex's exact concern: focus loss with NO background hook activity.
+	// The previous iteration only flipped wasForeground in the !isForeground
+	// branch of hookCB, so this case never armed the resync. Driving
+	// FocusTracker from Walk activation events fixes it because Deactivate
+	// is called on the activation message regardless of keyboard activity.
+	state := &RecorderState{}
+	state.ProcessKeyEvent(0xA2, true) // Ctrl down via foreground tracking
+	if state.HeldModifiers != modControl {
+		t.Fatalf("setup: HeldModifiers = 0x%X, want 0x%X", state.HeldModifiers, modControl)
+	}
+
+	tracker := &FocusTracker{
+		State:    state,
+		Snapshot: func() uint32 { return 0 }, // user released Ctrl during secure desktop
+		HasFocus: true,
+	}
+
+	// Simulate: focus lost (Walk fires Deactivating), then regained
+	// (Walk fires Activating). NO BackgroundKeyEvent calls in between.
+	tracker.Deactivate()
+	tracker.Activate()
+
+	if state.HeldModifiers != 0 {
+		t.Errorf("HeldModifiers = 0x%X, want 0 (resync should clear stale Ctrl)", state.HeldModifiers)
+	}
+
+	if action := state.ProcessKeyEvent(0x41, true); action != RecorderNeedModifier {
+		t.Errorf("post-resync bare A: got %d, want RecorderNeedModifier", action)
+	}
+}
